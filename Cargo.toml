@@ -1,8 +1,16 @@
 [package]
-name = "crate-template"
+name = "vm-superio"
 version = "0.1.0"
-authors = [TODO]
+description = "Emulation for legacy devices"
+keywords = ["legacy"]
+repository = "https://github.com/rust-vmm/vm-superio"
+readme = "README.md"
+authors = ["rust-vmm AWS maintainers <rust-vmm-maintainers@amazon.com>"]
 license = "Apache-2.0 OR BSD-3-Clause"
 edition = "2018"
 
 [dependencies]
+vmm-sys-util = ">=0.6.1"
+
+[dev-dependencies]
+libc = ">=0.2.39"

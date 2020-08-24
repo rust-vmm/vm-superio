@@ -16,8 +16,9 @@ For a VMM to be able to use this device, besides the emulation part which is
 covered in this crate, the serial port should be added to the microVM’s PIO bus,
 the serial backend should be defined and if and how the event handling is done.
 
-The following UART registers are emulated via the `Serial` struct: DLL, IER,
-DLH, IIR, LCR, LSR, MCR, MSR and SR (more details about these,
+The following UART registers are emulated via the
+[`Serial` structure](src/serial.rs): DLL, IER, DLH, IIR, LCR, LSR, MCR, MSR and
+SR (more details about these,
 [here](http://%20https//en.wikibooks.org/w/index.php?title=Serial_Programming/8250_UART_Programming%C2%A7ion=15#UART_Registers)).
 The Fifo Control Register (FCR) is not emulated since we are not interested in
 directly controlling the FIFOs and The Receiver Buffer and Transmitter Holding
