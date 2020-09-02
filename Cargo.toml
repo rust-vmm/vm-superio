@@ -2,7 +2,7 @@
 name = "vm-superio"
 version = "0.1.0"
 description = "Emulation for legacy devices"
-keywords = ["legacy"]
+keywords = ["superio", "emulation"]
 repository = "https://github.com/rust-vmm/vm-superio"
 readme = "README.md"
 authors = ["rust-vmm AWS maintainers <rust-vmm-maintainers@amazon.com>"]
