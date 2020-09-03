@@ -257,7 +257,7 @@ impl<W: Write> Serial<W> {
     /// let mut serial = Serial::new(intr_evt, Vec::new());
     ///
     /// // Write 0x01 to THR register.
-    /// serial.write(2, 0x01).unwrap();
+    /// serial.write(0, 0x01).unwrap();
     /// ```
     pub fn write(&mut self, offset: u8, value: u8) -> Result<()> {
         match offset {
@@ -311,7 +311,7 @@ impl<W: Write> Serial<W> {
     /// let mut serial = Serial::new(intr_evt, Vec::new());
     ///
     /// // Read from RBR register.
-    /// let value = serial.read(2);
+    /// let value = serial.read(0);
     /// ```
     pub fn read(&mut self, offset: u8) -> u8 {
         match offset {
