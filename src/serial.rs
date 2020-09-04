@@ -51,7 +51,10 @@ const LCR_DLAB_BIT: u8 = 0b1000_0000;
 const LSR_DATA_READY_BIT: u8 = 0b0000_0001;
 // These two bits help the driver know if the device is ready to accept
 // another character.
+// THR is empty.
 const LSR_EMPTY_THR_BIT: u8 = 0b0010_0000;
+// The shift register, which takes a byte from THR and breaks it in bits
+// for sending them on the line, is empty.
 const LSR_IDLE_BIT: u8 = 0b0100_0000;
 
 // The following five MCR bits allow direct manipulation of the device and
@@ -84,9 +87,9 @@ const DEFAULT_BAUD_DIVISOR_LOW: u8 = 0x0C;
 const DEFAULT_INTERRUPT_ENABLE: u8 = 0x00;
 // No pending interrupt.
 const DEFAULT_INTERRUPT_IDENTIFICATION: u8 = IIR_NONE_BIT;
-// We're setting the default to include LSR_EMPTY_THR_BIT and never update
-// that bit because we're working with a virtual device, hence we should
-// always be ready to receive more data.
+// We're setting the default to include LSR_EMPTY_THR_BIT and LSR_IDLE_BIT
+// and never update those bits because we're working with a virtual device,
+// hence we should always be ready to receive more data.
 const DEFAULT_LINE_STATUS: u8 = LSR_EMPTY_THR_BIT | LSR_IDLE_BIT;
 // 8 bits word length.
 const DEFAULT_LINE_CONTROL: u8 = 0b0000_0011;
@@ -114,10 +117,10 @@ pub struct Serial<W: Write> {
     modem_control: u8,
     modem_status: u8,
     scratch: u8,
-    // A simplified way to achieve (and extend) the Receiver and Transmitter
-    // registers functionality. It is worth mentioning these registers can
-    // store only one byte when having in mind the UART specification, but we
-    // are somehow simulating here the FIFO capability too.
+    // This is the buffer, that is used for achieving the Receiver and Transmitter
+    // registers functionality in FIFO mode. Reading from RBR will return the oldest
+    // unread byte from the buffer and writing to THR will expand this buffer with
+    // one byte.
     in_buffer: VecDeque<u8>,
 
     // Used for notifying the driver about some in/out events.
