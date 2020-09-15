@@ -15,9 +15,12 @@ This UART is an improvement of the original
 [UART 8250 serial port](https://en.wikibooks.org/w/index.php?title=Serial_Programming/8250_UART_Programming&section=15#Serial_COM_Port_Memory_and_I/O_Allocation),
 mostly because of the FIFO buffers that allow storing more than one byte at a
 time, which, in virtualized environments, is essential.
+
 For a VMM to be able to use this device, besides the emulation part which is
-covered in this crate, the serial port should be added to the microVM’s PIO bus,
-the serial backend should be defined and if and how the event handling is done.
+covered in this crate, the VMM needs to do the following operations:
+- add the serial port to the Bus (either PIO or MMIO)
+- define the serial backend
+- event handling (optional)
 
 The following UART registers are emulated via the
 [`Serial` structure](src/serial.rs): DLL, IER, DLH, IIR, LCR, LSR, MCR, MSR and
