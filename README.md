@@ -10,7 +10,8 @@ this support only for the
 ### Design
 
 The console emulation is done by emulating a simple
-[UART 16550A serial port](https://en.wikipedia.org/wiki/16550_UART).
+[UART 16550A serial port](https://en.wikipedia.org/wiki/16550_UART) with a
+64-byte FIFO.
 This UART is an improvement of the original
 [UART 8250 serial port](https://en.wikibooks.org/w/index.php?title=Serial_Programming/8250_UART_Programming&section=15#Serial_COM_Port_Memory_and_I/O_Allocation),
 mostly because of the FIFO buffers that allow storing more than one byte at a
