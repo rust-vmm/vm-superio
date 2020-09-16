@@ -30,7 +30,7 @@ const SCR_OFFSET: u8 = 7;
 const DLAB_LOW_OFFSET: u8 = 0;
 const DLAB_HIGH_OFFSET: u8 = 1;
 
-const LOOP_SIZE: usize = 0x40;
+const FIFO_SIZE: usize = 0x40;
 
 // Received Data Available interrupt - for letting the driver know that
 // there is some pending data to be processed.
@@ -316,7 +316,7 @@ impl<T: Trigger, W: Write> Serial<T, W> {
                     // transmitted bytes and letting the driver know there is some
                     // pending data to be read, by setting RDA bit and its
                     // corresponding interrupt.
-                    if self.in_buffer.len() < LOOP_SIZE {
+                    if self.in_buffer.len() < FIFO_SIZE {
                         self.in_buffer.push_back(value);
                         self.set_lsr_rda_bit();
                         self.received_data_interrupt().map_err(Error::Trigger)?;
@@ -530,7 +530,7 @@ mod tests {
         serial.write(MCR_OFFSET, MCR_LOOP_BIT).unwrap();
         serial.write(IER_OFFSET, IER_RDA_BIT).unwrap();
 
-        for value in 0..LOOP_SIZE as u8 {
+        for value in 0..FIFO_SIZE as u8 {
             serial.write(DATA_OFFSET, value).unwrap();
             assert_eq!(intr_evt.read().unwrap(), 1);
             assert_eq!(serial.in_buffer.len(), 1);
@@ -540,15 +540,15 @@ mod tests {
 
         assert_eq!(serial.line_status & LSR_DATA_READY_BIT, 0);
 
-        for value in 0..LOOP_SIZE as u8 {
+        for value in 0..FIFO_SIZE as u8 {
             serial.write(DATA_OFFSET, value).unwrap();
         }
 
         assert_eq!(intr_evt.read().unwrap(), 1);
-        assert_eq!(serial.in_buffer.len(), LOOP_SIZE);
+        assert_eq!(serial.in_buffer.len(), FIFO_SIZE);
 
         // Read the pushed values at the end.
-        for value in 0..LOOP_SIZE as u8 {
+        for value in 0..FIFO_SIZE as u8 {
             assert_ne!(serial.line_status & LSR_DATA_READY_BIT, 0);
             assert_eq!(serial.read(DATA_OFFSET), value);
         }
