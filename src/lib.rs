@@ -8,10 +8,13 @@
 
 //! Emulation for legacy devices.
 //!
-//! For now, it offers emulation support only for the Linux serial console.
+//! For now, it offers emulation support only for the Linux serial console
+//! and an i8042 PS/2 controller that only handles the CPU reset.
 
 #![deny(missing_docs)]
 
+pub mod i8042;
 pub mod serial;
 
+pub use i8042::I8042Device;
 pub use serial::Serial;
