@@ -3,7 +3,8 @@
 
 The `vm-superio` crate provides emulation for legacy devices. For now, it offers
 this support only for the
-[Linux serial console](https://en.wikipedia.org/wiki/Linux_console).
+[Linux serial console](https://en.wikipedia.org/wiki/Linux_console) and a minimal
+[i8042 PS/2 Controller](https://wiki.osdev.org/%228042%22_PS/2_Controller).
 
 ## Serial Console
 
@@ -45,7 +46,13 @@ handled, but further abstractions may come here; see
 
 The interaction between the serial console and its driver, at the emulation
 level, is done by the two `read` and `write` specific methods, which handle
-one byte accesses. For sending more input, `enqueue_raw_bytes` can be used. 
+one byte accesses. For sending more input, `enqueue_raw_bytes` can be used.
+
+## i8042 PS/2 Controller
+
+The i8042 PS/2 controller emulates, at this point, only the
+[CPU reset command](https://wiki.osdev.org/%228042%22_PS/2_Controller#CPU_Reset)
+which is needed for announcing the VMM about the guest's shutdown.
 
 ## License
 
