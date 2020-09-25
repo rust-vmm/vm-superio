@@ -10,6 +10,9 @@
 //!
 //! For now, it offers emulation support only for the Linux serial console
 //! and an i8042 PS/2 controller that only handles the CPU reset.
+//!
+//! It also provides a [Trigger](trait.Trigger.html) interface for an object
+//! that can generate an event.
 
 #![deny(missing_docs)]
 
@@ -18,3 +21,21 @@ pub mod serial;
 
 pub use i8042::I8042Device;
 pub use serial::Serial;
+
+use std::result::Result;
+
+/// Abstraction for a simple, push-button like interrupt mechanism.
+/// This helps in abstracting away how events/interrupts are generated when
+/// working with the emulated devices.
+///
+/// The user has to provide a `Trigger` object to the device's constructor when
+/// initializing that device. The generic type `T: Trigger` is used in the
+/// device's structure definition to mark the fact that the events notification
+/// mechanism is done via the Trigger interface.
+pub trait Trigger {
+    /// Underlying type for the potential error conditions returned by `Self::trigger`.
+    type E;
+
+    /// Trigger an event.
+    fn trigger(&self) -> Result<(), Self::E>;
+}
