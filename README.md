@@ -37,10 +37,9 @@ in testing the UART when running in loopback mode and for keeping the guest
 output to a `Write` object (`out`). The VMM that will use the serial console,
 when instantiating a `Serial`, will have to provide a `Write` object for it (for
 example `io::Stdout` or `io::Sink`).
-The `interrupt_evt` fd is the currently used mechanism for notifying the driver
+A `Trigger` object is the currently used mechanism for notifying the driver
 when changes in the previously mentioned buffer happened that need to be
-handled, but further abstractions may come here; see
-[tracking issue](https://github.com/rust-vmm/vm-superio/issues/7).
+handled.
 
 ### Usage
 

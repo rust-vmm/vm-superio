@@ -11,9 +11,10 @@
 //! This is done by emulating an UART serial port.
 
 use std::collections::VecDeque;
-use std::io::{Result, Write};
+use std::io::{self, Write};
+use std::result;
 
-use vmm_sys_util::eventfd::EventFd;
+use crate::Trigger;
 
 // Register offsets.
 // Receiver and Transmitter registers offset, depending on the I/O
@@ -104,9 +105,56 @@ const DEFAULT_SCRATCH: u8 = 0x00;
 /// 12 registers mapped into 8 consecutive Port I/O locations (with the first
 /// one being the base).
 /// This structure emulates the registers that make sense for UART 16550 (and below)
-/// and helps in the interaction between the driver and device by using a fd for
-/// notifications. It also writes the guest's output to an `out` Write object.
-pub struct Serial<W: Write> {
+/// and helps in the interaction between the driver and device by using a
+/// [`Trigger`](../trait.Trigger.html) object for notifications. It also writes the
+/// guest's output to an `out` Write object.
+///
+/// # Example
+///
+/// ```rust
+/// # use std::io::{sink, Error, Result};
+/// # use std::ops::Deref;
+/// # use vm_superio::Trigger;
+/// # use vm_superio::Serial;
+/// # use vmm_sys_util::eventfd::EventFd;
+///
+/// struct EventFdTrigger(EventFd);
+/// impl Trigger for EventFdTrigger {
+///     type E = Error;
+///
+///     fn trigger(&self) -> Result<()> {
+///         self.write(1)
+///     }
+/// }
+/// impl Deref for EventFdTrigger {
+///     type Target = EventFd;
+///     fn deref(&self) -> &Self::Target {
+///         &self.0
+///     }
+/// }
+/// impl EventFdTrigger {
+///     pub fn new(flag: i32) -> Self {
+///         EventFdTrigger(EventFd::new(flag).unwrap())
+///     }
+///     pub fn try_clone(&self) -> Self {
+///         EventFdTrigger((**self).try_clone().unwrap())
+///     }
+/// }
+///
+/// let intr_evt = EventFdTrigger::new(libc::EFD_NONBLOCK);
+/// let mut serial = Serial::new(intr_evt.try_clone(), Vec::new());
+/// // std::io::Sink can be used if user is not interested in guest's output.
+/// let serial_with_sink = Serial::new(intr_evt, sink());
+///
+/// // Write 0x01 to THR register.
+/// serial.write(0, 0x01).unwrap();
+/// // Read from RBR register.
+/// let value = serial.read(0);
+///
+/// // Send more bytes to the guest in one shot.
+/// serial.enqueue_raw_bytes(&[b'a', b'b', b'c']).unwrap();
+/// ```
+pub struct Serial<T: Trigger, W: Write> {
     // Some UART registers.
     baud_divisor_low: u8,
     baud_divisor_high: u8,
@@ -124,18 +172,30 @@ pub struct Serial<W: Write> {
     in_buffer: VecDeque<u8>,
 
     // Used for notifying the driver about some in/out events.
-    interrupt_evt: EventFd,
+    interrupt_evt: T,
     out: W,
 }
 
-impl<W: Write> Serial<W> {
+/// Errors encountered while handling serial console operations.
+#[derive(Debug)]
+pub enum Error<E> {
+    /// Failed to trigger interrupt.
+    Trigger(E),
+    /// Couldn't write/flush to the given destination.
+    IOError(io::Error),
+}
+
+/// Specialized Result type for [Serial Errors](enum.Error.html).
+pub type Result<E> = result::Result<(), E>;
+
+impl<T: Trigger, W: Write> Serial<T, W> {
     /// Creates a new `Serial` instance which writes the guest's output to
-    /// `out` and uses `interrupt_evt` fd to notify the driver about new
+    /// `out` and uses `trigger` object to notify the driver about new
     /// events.
     ///
     /// # Arguments
-    /// * `interrupt_evt` - The fd that will be used to notify the driver
-    ///                     about events.
+    /// * `trigger` - The Trigger object that will be used to notify the driver
+    ///               about events.
     /// * `out` - An object for writing guest's output to. In case the output
     ///           is not of interest,
     ///           [std::io::Sink](https://doc.rust-lang.org/std/io/struct.Sink.html)
@@ -143,17 +203,9 @@ impl<W: Write> Serial<W> {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// # use std::io::sink;
-    /// # use vm_superio::Serial;
-    /// # use vmm_sys_util::eventfd::EventFd;
-    /// let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
-    /// let serial = Serial::new(intr_evt.try_clone().unwrap(), Vec::new());
-    ///
-    /// // std::io::Sink can be used if user is not interested in guest's output.
-    /// let serial_with_sink = Serial::new(intr_evt, sink());
-    /// ```
-    pub fn new(interrupt_evt: EventFd, out: W) -> Serial<W> {
+    /// You can see an example of how to use this function in the
+    /// [`Example` section from `Serial`](struct.Serial.html#example).
+    pub fn new(trigger: T, out: W) -> Serial<T, W> {
         Serial {
             baud_divisor_low: DEFAULT_BAUD_DIVISOR_LOW,
             baud_divisor_high: DEFAULT_BAUD_DIVISOR_HIGH,
@@ -165,13 +217,13 @@ impl<W: Write> Serial<W> {
             modem_status: DEFAULT_MODEM_STATUS,
             scratch: DEFAULT_SCRATCH,
             in_buffer: VecDeque::new(),
-            interrupt_evt,
+            interrupt_evt: trigger,
             out,
         }
     }
 
-    /// Provides a reference to the interrupt event fd.
-    pub fn interrupt_evt(&self) -> &EventFd {
+    /// Provides a reference to the interrupt event object.
+    pub fn interrupt_evt(&self) -> &T {
         &self.interrupt_evt
     }
 
@@ -191,8 +243,8 @@ impl<W: Write> Serial<W> {
         (self.modem_control & MCR_LOOP_BIT) != 0
     }
 
-    fn trigger_interrupt(&mut self) -> Result<()> {
-        self.interrupt_evt.write(1)
+    fn trigger_interrupt(&mut self) -> Result<T::E> {
+        self.interrupt_evt.trigger()
     }
 
     fn set_lsr_rda_bit(&mut self) {
@@ -215,7 +267,7 @@ impl<W: Write> Serial<W> {
         }
     }
 
-    fn thr_empty_interrupt(&mut self) -> Result<()> {
+    fn thr_empty_interrupt(&mut self) -> Result<T::E> {
         if self.is_thr_interrupt_enabled() {
             // Trigger the interrupt only if the identification bit wasn't
             // set or acknowledged.
@@ -227,7 +279,7 @@ impl<W: Write> Serial<W> {
         Ok(())
     }
 
-    fn received_data_interrupt(&mut self) -> Result<()> {
+    fn received_data_interrupt(&mut self) -> Result<T::E> {
         if self.is_rda_interrupt_enabled() {
             // Trigger the interrupt only if the identification bit wasn't
             // set or acknowledged.
@@ -253,16 +305,9 @@ impl<W: Write> Serial<W> {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// # use vm_superio::Serial;
-    /// # use vmm_sys_util::eventfd::EventFd;
-    /// let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
-    /// let mut serial = Serial::new(intr_evt, Vec::new());
-    ///
-    /// // Write 0x01 to THR register.
-    /// serial.write(0, 0x01).unwrap();
-    /// ```
-    pub fn write(&mut self, offset: u8, value: u8) -> Result<()> {
+    /// You can see an example of how to use this function in the
+    /// [`Example` section from `Serial`](struct.Serial.html#example).
+    pub fn write(&mut self, offset: u8, value: u8) -> Result<Error<T::E>> {
         match offset {
             DLAB_LOW_OFFSET if self.is_dlab_set() => self.baud_divisor_low = value,
             DLAB_HIGH_OFFSET if self.is_dlab_set() => self.baud_divisor_high = value,
@@ -277,12 +322,12 @@ impl<W: Write> Serial<W> {
                     if self.in_buffer.len() < LOOP_SIZE {
                         self.in_buffer.push_back(value);
                         self.set_lsr_rda_bit();
-                        self.received_data_interrupt()?;
+                        self.received_data_interrupt().map_err(Error::Trigger)?;
                     }
                 } else {
-                    self.out.write_all(&[value])?;
-                    self.out.flush()?;
-                    self.thr_empty_interrupt()?;
+                    self.out.write_all(&[value]).map_err(Error::IOError)?;
+                    self.out.flush().map_err(Error::IOError)?;
+                    self.thr_empty_interrupt().map_err(Error::Trigger)?;
                 }
             }
             // We want to enable only the interrupts that are available for 16550A (and below).
@@ -307,15 +352,8 @@ impl<W: Write> Serial<W> {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// # use vm_superio::Serial;
-    /// # use vmm_sys_util::eventfd::EventFd;
-    /// let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
-    /// let mut serial = Serial::new(intr_evt, Vec::new());
-    ///
-    /// // Read from RBR register.
-    /// let value = serial.read(0);
-    /// ```
+    /// You can see an example of how to use this function in the
+    /// [`Example` section from `Serial`](struct.Serial.html#example).
     pub fn read(&mut self, offset: u8) -> u8 {
         match offset {
             DLAB_LOW_OFFSET if self.is_dlab_set() => self.baud_divisor_low,
@@ -382,19 +420,13 @@ impl<W: Write> Serial<W> {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// # use vm_superio::Serial;
-    /// # use vmm_sys_util::eventfd::EventFd;
-    /// let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
-    /// let mut serial = Serial::new(intr_evt, Vec::new());
-    ///
-    /// serial.enqueue_raw_bytes(&[b'a', b'b', b'c']).unwrap();
-    /// ```
-    pub fn enqueue_raw_bytes(&mut self, input: &[u8]) -> Result<()> {
+    /// You can see an example of how to use this function in the
+    /// [`Example` section from `Serial`](struct.Serial.html#example).
+    pub fn enqueue_raw_bytes(&mut self, input: &[u8]) -> Result<Error<T::E>> {
         if !self.is_in_loop_mode() {
             self.in_buffer.extend(input);
             self.set_lsr_rda_bit();
-            self.received_data_interrupt()?;
+            self.received_data_interrupt().map_err(Error::Trigger)?;
         }
         Ok(())
     }
@@ -403,9 +435,19 @@ impl<W: Write> Serial<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::sink;
+    use std::io::{sink, Error, Result};
+
+    use vmm_sys_util::eventfd::EventFd;
 
     const RAW_INPUT_BUF: [u8; 3] = [b'a', b'b', b'c'];
+
+    impl Trigger for EventFd {
+        type E = Error;
+
+        fn trigger(&self) -> Result<()> {
+            self.write(1)
+        }
+    }
 
     #[test]
     fn test_serial_output() {

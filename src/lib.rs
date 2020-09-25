@@ -32,6 +32,15 @@ use std::result::Result;
 /// initializing that device. The generic type `T: Trigger` is used in the
 /// device's structure definition to mark the fact that the events notification
 /// mechanism is done via the Trigger interface.
+/// An example of how to implement the `Trigger` interface for
+/// [an eventfd wrapper](https://github.com/rust-vmm/vmm-sys-util/blob/master/src/linux/eventfd.rs)
+/// can be found in the
+/// [`Example` section from `Serial`](../vm_superio/serial/struct.Serial.html#example).
+/// The `EventFd` is wrapped in the `EventFdTrigger` newtype because Rust
+/// doesn't allow implementing an external trait on external types. To get
+/// around this restriction, the newtype pattern can be used. More details
+/// about this,
+/// [here](https://doc.rust-lang.org/book/ch19-03-advanced-traits.html#using-the-newtype-pattern-to-implement-external-traits-on-external-types).
 pub trait Trigger {
     /// Underlying type for the potential error conditions returned by `Self::trigger`.
     type E;
