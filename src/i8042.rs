@@ -9,9 +9,9 @@
 //!
 //! This emulates just the CPU reset command.
 
-use std::fmt::{self, Display, Formatter};
-use std::{io, result};
-use vmm_sys_util::eventfd::EventFd;
+use std::result;
+
+use crate::Trigger;
 
 // Offset of the command register, for write accesses (port 0x64). The same
 // offset can be used, in case of read operations, to access the status
@@ -22,44 +22,26 @@ const COMMAND_OFFSET: u8 = 4;
 // Reset CPU command.
 const CMD_RESET_CPU: u8 = 0xFE;
 
-/// Errors encountered while handling i8042 operations.
-#[derive(Debug)]
-pub enum Error {
-    /// Failed to trigger interrupt.
-    TriggerInterrupt(io::Error),
-}
-
 /// Specialized Result type for [i8042 Errors](enum.Error.html).
-pub type Result<T> = result::Result<T, Error>;
-
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Error::TriggerInterrupt(_) => "Cannot trigger interrupt",
-            }
-        )
-    }
-}
+pub type Result<E> = result::Result<(), E>;
 
 /// An i8042 PS/2 controller that emulates just enough to shutdown the machine.
-pub struct I8042Device {
-    /// CPU reset event fd. We will trigger this event when the guest issues
+///
+/// A [`Trigger`](../trait.Trigger.html) object is used for notifying the VMM
+/// about the CPU reset event.
+pub struct I8042Device<T: Trigger> {
+    /// CPU reset event object. We will trigger this event when the guest issues
     /// the reset CPU command.
-    reset_evt: EventFd,
+    reset_evt: T,
 }
 
-impl I8042Device {
+impl<T: Trigger> I8042Device<T> {
     /// Constructs an i8042 device that will signal the given event when the
     /// guest requests it.
-    pub fn new(reset_evt: EventFd) -> I8042Device {
+    pub fn new(reset_evt: T) -> I8042Device<T> {
         I8042Device { reset_evt }
     }
-}
 
-impl I8042Device {
     /// Handles a read request from the driver at `_offset` offset from the
     /// base I/O address.
     ///
@@ -80,11 +62,11 @@ impl I8042Device {
     /// * `offset` - The offset that will be added to the base address
     ///              for writing to a specific register.
     /// * `value` - The byte that should be written.
-    pub fn write(&mut self, offset: u8, value: u8) -> Result<()> {
+    pub fn write(&mut self, offset: u8, value: u8) -> Result<T::E> {
         match offset {
             COMMAND_OFFSET if value == CMD_RESET_CPU => {
-                // Trigger the exit event fd.
-                self.reset_evt.write(1).map_err(Error::TriggerInterrupt)
+                // Trigger the exit event.
+                self.reset_evt.trigger()
             }
             _ => Ok(()),
         }
@@ -94,9 +76,10 @@ impl I8042Device {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use vmm_sys_util::eventfd::EventFd;
 
     #[test]
-    fn test_i8042_read_write_and_event() {
+    fn test_i8042_ops() {
         let reset_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
         let mut i8042 = I8042Device::new(reset_evt.try_clone().unwrap());
 

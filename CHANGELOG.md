@@ -7,6 +7,12 @@
 - Added emulation support for an i8042 controller that only handles the CPU
   reset.
 
+## Changed
+
+- Changed the notification mechanism from EventFd to the Trigger abstraction
+  for both serial console and i8042
+  ([#7](https://github.com/rust-vmm/vm-superio/issues/7)).
+
 # v0.1.0
 
 This is the first vm-superio release.
