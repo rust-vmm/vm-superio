@@ -135,7 +135,7 @@ mod tests {
     use vmm_sys_util::eventfd::EventFd;
 
     #[test]
-    fn test_i8042_ops() {
+    fn test_i8042_valid_ops() {
         let reset_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
         let mut i8042 = I8042Device::new(reset_evt.try_clone().unwrap());
 
@@ -144,12 +144,27 @@ mod tests {
         // Check if reset works.
         i8042.write(COMMAND_OFFSET, CMD_RESET_CPU).unwrap();
         assert_eq!(reset_evt.read().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_i8042_invalid_reset() {
+        let reset_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
+        let mut i8042 = I8042Device::new(reset_evt.try_clone().unwrap());
 
         // Write something different than CPU reset and check that the reset event
         // was not triggered. For this we have to write 1 to the reset event fd, so
         // that read doesn't block.
         assert!(reset_evt.write(1).is_ok());
         i8042.write(COMMAND_OFFSET, CMD_RESET_CPU + 1).unwrap();
+        assert_eq!(reset_evt.read().unwrap(), 1);
+
+        // Write the CPU reset to a different offset than COMMAND_OFFSET and check that
+        // the reset event was not triggered.
+        // For such accesses we should increment some metric (COMMAND_OFFSET + 1 is not
+        // even a valid i8042 offset), see
+        // [tracking issue](https://github.com/rust-vmm/vm-superio/issues/13).
+        assert!(reset_evt.write(1).is_ok());
+        i8042.write(COMMAND_OFFSET + 1, CMD_RESET_CPU).unwrap();
         assert_eq!(reset_evt.read().unwrap(), 1);
     }
 }
