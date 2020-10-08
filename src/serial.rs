@@ -12,7 +12,7 @@
 
 use std::collections::VecDeque;
 use std::io::{self, Write};
-use std::result;
+use std::result::Result;
 
 use crate::Trigger;
 
@@ -185,9 +185,6 @@ pub enum Error<E> {
     IOError(io::Error),
 }
 
-/// Specialized Result type for [Serial Errors](enum.Error.html).
-pub type Result<E> = result::Result<(), E>;
-
 impl<T: Trigger, W: Write> Serial<T, W> {
     /// Creates a new `Serial` instance which writes the guest's output to
     /// `out` and uses `trigger` object to notify the driver about new
@@ -243,7 +240,7 @@ impl<T: Trigger, W: Write> Serial<T, W> {
         (self.modem_control & MCR_LOOP_BIT) != 0
     }
 
-    fn trigger_interrupt(&mut self) -> Result<T::E> {
+    fn trigger_interrupt(&mut self) -> Result<(), T::E> {
         self.interrupt_evt.trigger()
     }
 
@@ -267,7 +264,7 @@ impl<T: Trigger, W: Write> Serial<T, W> {
         }
     }
 
-    fn thr_empty_interrupt(&mut self) -> Result<T::E> {
+    fn thr_empty_interrupt(&mut self) -> Result<(), T::E> {
         if self.is_thr_interrupt_enabled() {
             // Trigger the interrupt only if the identification bit wasn't
             // set or acknowledged.
@@ -279,7 +276,7 @@ impl<T: Trigger, W: Write> Serial<T, W> {
         Ok(())
     }
 
-    fn received_data_interrupt(&mut self) -> Result<T::E> {
+    fn received_data_interrupt(&mut self) -> Result<(), T::E> {
         if self.is_rda_interrupt_enabled() {
             // Trigger the interrupt only if the identification bit wasn't
             // set or acknowledged.
@@ -307,7 +304,7 @@ impl<T: Trigger, W: Write> Serial<T, W> {
     ///
     /// You can see an example of how to use this function in the
     /// [`Example` section from `Serial`](struct.Serial.html#example).
-    pub fn write(&mut self, offset: u8, value: u8) -> Result<Error<T::E>> {
+    pub fn write(&mut self, offset: u8, value: u8) -> Result<(), Error<T::E>> {
         match offset {
             DLAB_LOW_OFFSET if self.is_dlab_set() => self.baud_divisor_low = value,
             DLAB_HIGH_OFFSET if self.is_dlab_set() => self.baud_divisor_high = value,
@@ -422,7 +419,7 @@ impl<T: Trigger, W: Write> Serial<T, W> {
     ///
     /// You can see an example of how to use this function in the
     /// [`Example` section from `Serial`](struct.Serial.html#example).
-    pub fn enqueue_raw_bytes(&mut self, input: &[u8]) -> Result<Error<T::E>> {
+    pub fn enqueue_raw_bytes(&mut self, input: &[u8]) -> Result<(), Error<T::E>> {
         if !self.is_in_loop_mode() {
             self.in_buffer.extend(input);
             self.set_lsr_rda_bit();

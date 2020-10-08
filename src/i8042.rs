@@ -9,7 +9,7 @@
 //!
 //! This emulates just the CPU reset command.
 
-use std::result;
+use std::result::Result;
 
 use crate::Trigger;
 
@@ -21,9 +21,6 @@ const COMMAND_OFFSET: u8 = 4;
 
 // Reset CPU command.
 const CMD_RESET_CPU: u8 = 0xFE;
-
-/// Specialized Result type for [i8042 Errors](enum.Error.html).
-pub type Result<E> = result::Result<(), E>;
 
 /// An i8042 PS/2 controller that emulates just enough to shutdown the machine.
 ///
@@ -118,7 +115,7 @@ impl<T: Trigger> I8042Device<T> {
     ///
     /// You can see an example of how to use this function in the
     /// [`Example` section from `I8042Device`](struct.I8042Device.html#example).
-    pub fn write(&mut self, offset: u8, value: u8) -> Result<T::E> {
+    pub fn write(&mut self, offset: u8, value: u8) -> Result<(), T::E> {
         match offset {
             COMMAND_OFFSET if value == CMD_RESET_CPU => {
                 // Trigger the exit event.

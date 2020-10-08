@@ -33,7 +33,7 @@ use std::result::Result;
 /// device's structure definition to mark the fact that the events notification
 /// mechanism is done via the Trigger interface.
 /// An example of how to implement the `Trigger` interface for
-/// [an eventfd wrapper](https://github.com/rust-vmm/vmm-sys-util/blob/master/src/linux/eventfd.rs)
+/// [an eventfd wrapper](https://docs.rs/vmm-sys-util/latest/vmm_sys_util/eventfd/index.html)
 /// can be found in the
 /// [`Example` section from `Serial`](../vm_superio/serial/struct.Serial.html#example).
 /// The `EventFd` is wrapped in the `EventFdTrigger` newtype because Rust
