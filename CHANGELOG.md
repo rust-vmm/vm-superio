@@ -13,6 +13,12 @@
   for both serial console and i8042
   ([#7](https://github.com/rust-vmm/vm-superio/issues/7)).
 
+## Fixed
+
+- Limited the maximum number of bytes allowed at a time, when enqueuing input
+  for serial, to 64 (FIFO_SIZE) to avoid memory pressure
+  ([#17](https://github.com/rust-vmm/vm-superio/issues/17)).
+
 # v0.1.0
 
 This is the first vm-superio release.
