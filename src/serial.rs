@@ -152,7 +152,12 @@ const DEFAULT_SCRATCH: u8 = 0x00;
 /// let value = serial.read(0);
 ///
 /// // Send more bytes to the guest in one shot.
-/// serial.enqueue_raw_bytes(&[b'a', b'b', b'c']).unwrap();
+/// let input = &[b'a', b'b', b'c'];
+/// // Before enqueuing bytes we first check if there is enough free space
+/// // in the FIFO.
+/// if serial.fifo_capacity() >= input.len() {
+///     serial.enqueue_raw_bytes(input).unwrap();
+/// }
 /// ```
 pub struct Serial<T: Trigger, W: Write> {
     // Some UART registers.
@@ -183,6 +188,8 @@ pub enum Error<E> {
     Trigger(E),
     /// Couldn't write/flush to the given destination.
     IOError(io::Error),
+    /// No space left in FIFO.
+    FullFifo,
 }
 
 impl<T: Trigger, W: Write> Serial<T, W> {
@@ -407,6 +414,17 @@ impl<T: Trigger, W: Write> Serial<T, W> {
         }
     }
 
+    /// Returns how much space is still available in the FIFO.
+    ///
+    /// # Example
+    ///
+    /// You can see an example of how to use this function in the
+    /// [`Example` section from `Serial`](struct.Serial.html#example).
+    #[inline]
+    pub fn fifo_capacity(&self) -> usize {
+        FIFO_SIZE - self.in_buffer.len()
+    }
+
     /// Helps in sending more bytes to the guest in one shot, by storing
     /// `input` bytes in UART buffer and letting the driver know there is
     /// some pending data to be read by setting RDA bit and its corresponding
@@ -415,31 +433,45 @@ impl<T: Trigger, W: Write> Serial<T, W> {
     /// # Arguments
     /// * `input` - The data to be sent to the guest.
     ///
+    /// # Returns
+    ///
+    /// The function returns the number of bytes it was able to write to the fifo,
+    /// or `FullFifo` error when the fifo is full. Users can use
+    /// [`fifo_capacity`](#method.fifo_capacity) before calling this function
+    /// to check the available space.
+    ///
     /// # Example
     ///
     /// You can see an example of how to use this function in the
     /// [`Example` section from `Serial`](struct.Serial.html#example).
-    pub fn enqueue_raw_bytes(&mut self, input: &[u8]) -> Result<(), Error<T::E>> {
+    pub fn enqueue_raw_bytes(&mut self, input: &[u8]) -> Result<usize, Error<T::E>> {
+        let mut write_count = 0;
         if !self.is_in_loop_mode() {
-            self.in_buffer.extend(input);
-            self.set_lsr_rda_bit();
-            self.received_data_interrupt().map_err(Error::Trigger)?;
+            if self.fifo_capacity() == 0 {
+                return Err(Error::FullFifo);
+            }
+            write_count = std::cmp::min(self.fifo_capacity(), input.len());
+            if write_count > 0 {
+                self.in_buffer.extend(&input[0..write_count]);
+                self.set_lsr_rda_bit();
+                self.received_data_interrupt().map_err(Error::Trigger)?;
+            }
         }
-        Ok(())
+        Ok(write_count)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{sink, Error, Result};
+    use std::io::{sink, Result};
 
     use vmm_sys_util::eventfd::EventFd;
 
     const RAW_INPUT_BUF: [u8; 3] = [b'a', b'b', b'c'];
 
     impl Trigger for EventFd {
-        type E = Error;
+        type E = io::Error;
 
         fn trigger(&self) -> Result<()> {
             self.write(1)
@@ -637,5 +669,33 @@ mod tests {
         // DSR and CTS from MSR are "matching wires" to DTR and RTS from MCR (so they will
         // have the same value).
         assert_eq!(serial.read(MSR_OFFSET), MSR_DSR_BIT | MSR_CTS_BIT);
+    }
+
+    #[test]
+    fn test_fifo_max_size() {
+        let event_fd = EventFd::new(libc::EFD_NONBLOCK).unwrap();
+        let mut serial = Serial::new(event_fd, sink());
+
+        // Test case: trying to write too many bytes in an empty fifo will just write
+        // `FIFO_SIZE`. Any other subsequent writes, will return a `FullFifo` error.
+        let too_many_bytes = vec![1u8; FIFO_SIZE + 1];
+        let written_bytes = serial.enqueue_raw_bytes(&too_many_bytes).unwrap();
+        assert_eq!(written_bytes, FIFO_SIZE);
+        assert_eq!(serial.in_buffer.len(), FIFO_SIZE);
+
+        // A subsequent call to `enqueue_raw_bytes` fails because the fifo is
+        // now full.
+        let one_byte_input = [1u8];
+        match serial.enqueue_raw_bytes(&one_byte_input) {
+            Err(Error::FullFifo) => (),
+            _ => unreachable!(),
+        }
+
+        // Test case: consuming one byte from a full fifo does not allow writes
+        // bigger than one byte.
+        let _ = serial.read(DATA_OFFSET);
+        let written_bytes = serial.enqueue_raw_bytes(&too_many_bytes[..2]).unwrap();
+        assert_eq!(written_bytes, 1);
+        assert_eq!(serial.in_buffer.len(), FIFO_SIZE);
     }
 }
