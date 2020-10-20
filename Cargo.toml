@@ -9,8 +9,6 @@ authors = ["rust-vmm AWS maintainers <rust-vmm-maintainers@amazon.com>"]
 license = "Apache-2.0 OR BSD-3-Clause"
 edition = "2018"
 
-[dependencies]
-vmm-sys-util = ">=0.6.1"
-
 [dev-dependencies]
 libc = ">=0.2.39"
+vmm-sys-util = ">=0.7.0"

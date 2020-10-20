@@ -99,6 +99,33 @@ const DEFAULT_MODEM_CONTROL: u8 = MCR_OUT2_BIT;
 const DEFAULT_MODEM_STATUS: u8 = MSR_DSR_BIT | MSR_CTS_BIT | MSR_DCD_BIT;
 const DEFAULT_SCRATCH: u8 = 0x00;
 
+/// Defines a series of callbacks that are invoked in response to the occurrence of specific
+/// events as part of the serial emulation logic (for example, when the driver reads data). The
+/// methods below can be implemented by a backend that keeps track of such events by incrementing
+/// metrics, logging messages, or any other action.
+///
+/// We're using a trait to avoid constraining the concrete characteristics of the backend in
+/// any way, enabling zero-cost abstractions and use case-specific implementations.
+// TODO: The events defined below are just some examples for now to validate the approach. If
+// things look good, we can move on to establishing the initial list. It's also worth mentioning
+// the methods can have extra parameters that provide additional information about the event.
+pub trait SerialEvents {
+    /// The driver reads data from the input buffer.
+    fn buffer_read(&self);
+    /// The driver successfully wrote one byte to serial output.
+    fn out_byte(&self);
+}
+
+/// Provides a no-op implementation of `SerialEvents` which can be used in situations that
+/// do not require logging or otherwise doing anything in response to the events defined
+/// as part of `SerialEvents`.
+pub struct NoEvents;
+
+impl SerialEvents for NoEvents {
+    fn buffer_read(&self) {}
+    fn out_byte(&self) {}
+}
+
 /// The serial console emulation is done by emulating a serial COM port.
 ///
 /// Each serial COM port (COM1-4) has an associated Port I/O address base and
@@ -159,7 +186,7 @@ const DEFAULT_SCRATCH: u8 = 0x00;
 ///     serial.enqueue_raw_bytes(input).unwrap();
 /// }
 /// ```
-pub struct Serial<T: Trigger, W: Write> {
+pub struct Serial<T: Trigger, EV: SerialEvents, W: Write> {
     // Some UART registers.
     baud_divisor_low: u8,
     baud_divisor_high: u8,
@@ -178,6 +205,7 @@ pub struct Serial<T: Trigger, W: Write> {
 
     // Used for notifying the driver about some in/out events.
     interrupt_evt: T,
+    serial_evts: EV,
     out: W,
 }
 
@@ -192,7 +220,7 @@ pub enum Error<E> {
     FullFifo,
 }
 
-impl<T: Trigger, W: Write> Serial<T, W> {
+impl<T: Trigger, W: Write> Serial<T, NoEvents, W> {
     /// Creates a new `Serial` instance which writes the guest's output to
     /// `out` and uses `trigger` object to notify the driver about new
     /// events.
@@ -209,7 +237,27 @@ impl<T: Trigger, W: Write> Serial<T, W> {
     ///
     /// You can see an example of how to use this function in the
     /// [`Example` section from `Serial`](struct.Serial.html#example).
-    pub fn new(trigger: T, out: W) -> Serial<T, W> {
+    pub fn new(trigger: T, out: W) -> Serial<T, NoEvents, W> {
+        Self::with_events(trigger, NoEvents, out)
+    }
+}
+
+impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
+    /// Creates a new `Serial` instance which writes the guest's output to
+    /// `out`, uses `trigger` object to notify the driver about new
+    /// events, and invokes the `serial_evts` implementation of `SerialEvents`
+    /// during operation.
+    ///
+    /// # Arguments
+    /// * `trigger` - The `Trigger` object that will be used to notify the driver
+    ///               about events.
+    /// * `serial_evts` - The `SerialEvents` implementation used to track the occurrence
+    ///                   of significant events in the serial operation logic.
+    /// * `out` - An object for writing guest's output to. In case the output
+    ///           is not of interest,
+    ///           [std::io::Sink](https://doc.rust-lang.org/std/io/struct.Sink.html)
+    ///           can be used here.
+    pub fn with_events(trigger: T, serial_evts: EV, out: W) -> Self {
         Serial {
             baud_divisor_low: DEFAULT_BAUD_DIVISOR_LOW,
             baud_divisor_high: DEFAULT_BAUD_DIVISOR_HIGH,
@@ -222,6 +270,7 @@ impl<T: Trigger, W: Write> Serial<T, W> {
             scratch: DEFAULT_SCRATCH,
             in_buffer: VecDeque::new(),
             interrupt_evt: trigger,
+            serial_evts,
             out,
         }
     }
@@ -331,6 +380,8 @@ impl<T: Trigger, W: Write> Serial<T, W> {
                 } else {
                     self.out.write_all(&[value]).map_err(Error::IOError)?;
                     self.out.flush().map_err(Error::IOError)?;
+                    self.serial_evts.out_byte();
+
                     self.thr_empty_interrupt().map_err(Error::Trigger)?;
                 }
             }
@@ -371,6 +422,8 @@ impl<T: Trigger, W: Write> Serial<T, W> {
                 if self.in_buffer.len() <= 1 {
                     self.clear_lsr_rda_bit();
                 }
+
+                self.serial_evts.buffer_read();
                 self.in_buffer.pop_front().unwrap_or_default()
             }
             IER_OFFSET => self.interrupt_enable,
@@ -464,9 +517,13 @@ impl<T: Trigger, W: Write> Serial<T, W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use std::io::{sink, Result};
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
 
     use vmm_sys_util::eventfd::EventFd;
+    use vmm_sys_util::metric::Metric;
 
     const RAW_INPUT_BUF: [u8; 3] = [b'a', b'b', b'c'];
 
@@ -475,6 +532,25 @@ mod tests {
 
         fn trigger(&self) -> Result<()> {
             self.write(1)
+        }
+    }
+
+    #[derive(Default)]
+    struct ExampleSerialMetrics {
+        read_count: AtomicU64,
+        out_byte_count: AtomicU64,
+    }
+
+    // We define this for `Arc<ExampleSerialMetrics>` because we expect to share a reference to
+    // the same object with other threads.
+    impl SerialEvents for Arc<ExampleSerialMetrics> {
+        fn buffer_read(&self) {
+            self.read_count.inc();
+            // We can also log a message here, or as part of any of the other methods.
+        }
+
+        fn out_byte(&self) {
+            self.out_byte_count.inc();
         }
     }
 
@@ -697,5 +773,29 @@ mod tests {
         let written_bytes = serial.enqueue_raw_bytes(&too_many_bytes[..2]).unwrap();
         assert_eq!(written_bytes, 1);
         assert_eq!(serial.in_buffer.len(), FIFO_SIZE);
+    }
+
+    #[test]
+    fn test_serial_events() {
+        let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
+        let metrics = Arc::new(ExampleSerialMetrics::default());
+        let mut serial = Serial::with_events(intr_evt, metrics, sink());
+
+        // Check everything is equal to 0 at the beginning.
+        assert_eq!(serial.serial_evts.read_count.count(), 0);
+        assert_eq!(serial.serial_evts.out_byte_count.count(), 0);
+
+        // This DATA read should cause the `SerialEvents::buffer_read` method to be invoked.
+        serial.read(DATA_OFFSET);
+        assert_eq!(serial.serial_evts.read_count.count(), 1);
+
+        // This DATA write should cause `SerialEvents::out_byte` to be called.
+        serial.write(DATA_OFFSET, 1).unwrap();
+        assert_eq!(serial.serial_evts.out_byte_count.count(), 1);
+
+        // Check that every metric has the expected value at the end, to ensure we didn't
+        // unexpectedly invoked any extra callbacks.
+        assert_eq!(serial.serial_evts.read_count.count(), 1);
+        assert_eq!(serial.serial_evts.out_byte_count.count(), 1);
     }
 }
