@@ -260,6 +260,7 @@ impl<T: Trigger, W: Write> Serial<T, W> {
     }
 
     fn add_interrupt(&mut self, interrupt_bits: u8) {
+        //
         self.interrupt_identification &= !IIR_NONE_BIT;
         self.interrupt_identification |= interrupt_bits;
     }
