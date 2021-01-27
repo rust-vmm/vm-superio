@@ -197,10 +197,9 @@ pub struct Serial<T: Trigger, EV: SerialEvents, W: Write> {
     modem_control: u8,
     modem_status: u8,
     scratch: u8,
-    // This is the buffer, that is used for achieving the Receiver and Transmitter
-    // registers functionality in FIFO mode. Reading from RBR will return the oldest
-    // unread byte from the buffer and writing to THR will expand this buffer with
-    // one byte.
+    // This is the buffer that is used for achieving the Receiver register
+    // functionality in FIFO mode. Reading from RBR will return the oldest
+    // unread byte from the RX FIFO.
     in_buffer: VecDeque<u8>,
 
     // Used for notifying the driver about some in/out events.
