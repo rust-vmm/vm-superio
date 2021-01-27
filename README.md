@@ -52,6 +52,22 @@ The i8042 PS/2 controller emulates, at this point, only the
 [CPU reset command](https://wiki.osdev.org/%228042%22_PS/2_Controller#CPU_Reset)
 which is needed for announcing the VMM about the guest's shutdown.
 
+## Threat model
+
+For the serial console, there is no monitoring of the amount of data that is
+written to the `out` object.
+
+*Threat*: A malicious guest can fill up the host disk by generating a high
+amount of data to be written to the serial output.  
+*Mitigation*: There is no mitigation implemented at the serial console emulation
+level. To mitigate this at the VMM level, it is recommended to use as output a
+resource that has a fixed size (e.g. ring buffer or a named pipe).  
+*Limitations*: In case of a named pipe, when the `out` object is at full
+capacity, a `write` request will result in blocking the driver indefinitely.
+This is caused by the THR empty interrupt no longer being sent (even if space
+has been freed up in the meantime). For a fix for the aforementioned problem,
+see [tracking issue](https://github.com/rust-vmm/vm-superio/issues/23).
+
 ## License
 
 This project is licensed under either of
