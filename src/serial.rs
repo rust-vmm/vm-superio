@@ -114,6 +114,8 @@ pub trait SerialEvents {
     fn buffer_read(&self);
     /// The driver successfully wrote one byte to serial output.
     fn out_byte(&self);
+    /// An error occurred while writing a byte to serial output resulting in a lost byte.
+    fn tx_lost_byte(&self);
 }
 
 /// Provides a no-op implementation of `SerialEvents` which can be used in situations that
@@ -124,6 +126,7 @@ pub struct NoEvents;
 impl SerialEvents for NoEvents {
     fn buffer_read(&self) {}
     fn out_byte(&self) {}
+    fn tx_lost_byte(&self) {}
 }
 
 /// The serial console emulation is done by emulating a serial COM port.
@@ -377,11 +380,20 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
                         self.received_data_interrupt().map_err(Error::Trigger)?;
                     }
                 } else {
-                    self.out.write_all(&[value]).map_err(Error::IOError)?;
-                    self.out.flush().map_err(Error::IOError)?;
-                    self.serial_evts.out_byte();
-
+                    let res = self
+                        .out
+                        .write_all(&[value])
+                        .map_err(Error::IOError)
+                        .and_then(|_| self.out.flush().map_err(Error::IOError))
+                        .map(|_| self.serial_evts.out_byte())
+                        .map_err(|err| {
+                            self.serial_evts.tx_lost_byte();
+                            err
+                        });
+                    // Because we cannot block the driver, the THRE interrupt is sent
+                    // irrespective of wheather we are able to write the byte or not
                     self.thr_empty_interrupt().map_err(Error::Trigger)?;
+                    return res;
                 }
             }
             // We want to enable only the interrupts that are available for 16550A (and below).
@@ -538,6 +550,7 @@ mod tests {
     struct ExampleSerialMetrics {
         read_count: AtomicU64,
         out_byte_count: AtomicU64,
+        tx_lost_byte_count: AtomicU64,
     }
 
     // We define this for `Arc<ExampleSerialMetrics>` because we expect to share a reference to
@@ -550,6 +563,10 @@ mod tests {
 
         fn out_byte(&self) {
             self.out_byte_count.inc();
+        }
+
+        fn tx_lost_byte(&self) {
+            self.tx_lost_byte_count.inc();
         }
     }
 
@@ -778,11 +795,13 @@ mod tests {
     fn test_serial_events() {
         let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
         let metrics = Arc::new(ExampleSerialMetrics::default());
-        let mut serial = Serial::with_events(intr_evt, metrics, sink());
+        let mut oneslot_buf = [0u8; 1];
+        let mut serial = Serial::with_events(intr_evt, metrics, oneslot_buf.as_mut());
 
         // Check everything is equal to 0 at the beginning.
         assert_eq!(serial.serial_evts.read_count.count(), 0);
         assert_eq!(serial.serial_evts.out_byte_count.count(), 0);
+        assert_eq!(serial.serial_evts.tx_lost_byte_count.count(), 0);
 
         // This DATA read should cause the `SerialEvents::buffer_read` method to be invoked.
         serial.read(DATA_OFFSET);
@@ -791,10 +810,39 @@ mod tests {
         // This DATA write should cause `SerialEvents::out_byte` to be called.
         serial.write(DATA_OFFSET, 1).unwrap();
         assert_eq!(serial.serial_evts.out_byte_count.count(), 1);
+        // `SerialEvents::tx_lost_byte` should not have been called.
+        assert_eq!(serial.serial_evts.tx_lost_byte_count.count(), 0);
+
+        // This DATA write should cause `SerialEvents::tx_lost_byte` to be called.
+        serial.write(DATA_OFFSET, 1).unwrap_err();
+        assert_eq!(serial.serial_evts.tx_lost_byte_count.count(), 1);
 
         // Check that every metric has the expected value at the end, to ensure we didn't
         // unexpectedly invoked any extra callbacks.
         assert_eq!(serial.serial_evts.read_count.count(), 1);
         assert_eq!(serial.serial_evts.out_byte_count.count(), 1);
+        assert_eq!(serial.serial_evts.tx_lost_byte_count.count(), 1);
+    }
+
+    #[test]
+    fn test_out_descrp_full_thre_sent() {
+        let mut nospace_buf = [0u8; 0];
+        let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
+        let mut serial = Serial::new(intr_evt, nospace_buf.as_mut());
+
+        // Enable THR interrupt.
+        serial.write(IER_OFFSET, IER_THR_EMPTY_BIT).unwrap();
+
+        // Write some data.
+        let res = serial.write(DATA_OFFSET, 5);
+        let iir = serial.read(IIR_OFFSET);
+
+        // The write failed.
+        assert!(
+            matches!(res.unwrap_err(), Error::IOError(io_err) if io_err.kind() == io::ErrorKind::WriteZero
+            )
+        );
+        // THR empty interrupt was raised nevertheless.
+        assert_eq!(iir & IIR_THR_EMPTY_BIT, IIR_THR_EMPTY_BIT);
     }
 }
