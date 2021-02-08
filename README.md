@@ -61,12 +61,7 @@ written to the `out` object.
 amount of data to be written to the serial output.  
 *Mitigation*: There is no mitigation implemented at the serial console emulation
 level. To mitigate this at the VMM level, it is recommended to use as output a
-resource that has a fixed size (e.g. ring buffer or a named pipe).  
-*Limitations*: In case of a named pipe, when the `out` object is at full
-capacity, a `write` request will result in blocking the driver indefinitely.
-This is caused by the THR empty interrupt no longer being sent (even if space
-has been freed up in the meantime). For a fix for the aforementioned problem,
-see [tracking issue](https://github.com/rust-vmm/vm-superio/issues/23).
+resource that has a fixed size (e.g. ring buffer or a named pipe).
 
 ## License
 
