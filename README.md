@@ -52,13 +52,32 @@ The i8042 PS/2 controller emulates, at this point, only the
 [CPU reset command](https://wiki.osdev.org/%228042%22_PS/2_Controller#CPU_Reset)
 which is needed for announcing the VMM about the guest's shutdown.
 
+## ARM PL031 Real Time Clock
+
+This module emulates the ARM PrimeCell Real Time Clock (RTC)
+[PL031](https://developer.arm.com/documentation/ddi0224/c/Functional-overview/RTC-operation/RTC-operation).
+The PL031 provides a long time base counter with a 1HZ counter signal and
+a configurable offset.
+
+This implementation emulates all control, peripheral ID, and PrimeCell ID
+registers; however, the interrupt based on the value of the Match Register
+(RTCMR) is not currently implemented (i.e., setting the Match Register has
+no effect).
+
+For a VMM to be able to use this device, the VMM needs to do the following:
+- add the RTC to the Bus (either PIO or MMIO)
+
+Note that because the Match Register is the only possible source of an event,
+and the Match Register is not currently implemented, no event handling
+is required.
+
 ## Threat model
 
 For the serial console, there is no monitoring of the amount of data that is
 written to the `out` object.
 
 *Threat*: A malicious guest can fill up the host disk by generating a high
-amount of data to be written to the serial output.  
+amount of data to be written to the serial output.
 *Mitigation*: There is no mitigation implemented at the serial console emulation
 level. To mitigate this at the VMM level, it is recommended to use as output a
 resource that has a fixed size (e.g. ring buffer or a named pipe).
