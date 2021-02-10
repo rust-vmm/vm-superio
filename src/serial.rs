@@ -43,9 +43,12 @@ const IER_UART_VALID_BITS: u8 = 0b0000_1111;
 
 //FIFO enabled.
 const IIR_FIFO_BITS: u8 = 0b1100_0000;
-const IIR_NONE_BIT: u8 = 0b0000_0001;
-const IIR_THR_EMPTY_BIT: u8 = 0b0000_0010;
+// Received data available.
 const IIR_RDA_BIT: u8 = 0b0000_0100;
+// Transmitter holding register empty.
+const IIR_THR_EMPTY_BIT: u8 = 0b0000_0010;
+// No interrupt pending.
+const IIR_NONE_BIT: u8 = 0b0000_0001;
 
 const LCR_DLAB_BIT: u8 = 0b1000_0000;
 
@@ -185,7 +188,7 @@ impl SerialEvents for NoEvents {
 /// let input = &[b'a', b'b', b'c'];
 /// // Before enqueuing bytes we first check if there is enough free space
 /// // in the FIFO.
-/// if serial.fifo_capacity() >= input.len() {
+/// if serial.rx_fifo_capacity() >= input.len() {
 ///     serial.enqueue_raw_bytes(input).unwrap();
 /// }
 /// ```
@@ -204,7 +207,11 @@ pub struct Serial<T: Trigger, EV: SerialEvents, W: Write> {
     // functionality in FIFO mode. Reading from RBR will return the oldest
     // unread byte from the RX FIFO.
     in_buffer: VecDeque<u8>,
-
+    // For the TX FIFO, instead of relying on a buffer, we emulate the
+    // same experience from the guest side by sending a thr_empty_interrupt
+    // every FIFO_SIZE bytes. This allows us to save on context switch time
+    // on the guest while keeping the code simple.
+    tx_fifo_len: usize,
     // Used for notifying the driver about some in/out events.
     interrupt_evt: T,
     serial_evts: EV,
@@ -271,6 +278,7 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
             modem_status: DEFAULT_MODEM_STATUS,
             scratch: DEFAULT_SCRATCH,
             in_buffer: VecDeque::new(),
+            tx_fifo_len: 0,
             interrupt_evt: trigger,
             serial_evts,
             out,
@@ -390,9 +398,13 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
                             self.serial_evts.tx_lost_byte();
                             err
                         });
-                    // Because we cannot block the driver, the THRE interrupt is sent
-                    // irrespective of wheather we are able to write the byte or not
-                    self.thr_empty_interrupt().map_err(Error::Trigger)?;
+                    self.tx_fifo_len += 1;
+                    if self.tx_fifo_len == FIFO_SIZE {
+                        self.tx_fifo_len = 0;
+                        // Because we cannot block the driver, the THRE interrupt is sent
+                        // irrespective of wheather we are able to write the byte or not
+                        self.thr_empty_interrupt().map_err(Error::Trigger)?;
+                    }
                     return res;
                 }
             }
@@ -478,15 +490,21 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
         }
     }
 
-    /// Returns how much space is still available in the FIFO.
+    /// Returns how much space is still available in the read FIFO.
     ///
     /// # Example
     ///
     /// You can see an example of how to use this function in the
     /// [`Example` section from `Serial`](struct.Serial.html#example).
     #[inline]
-    pub fn fifo_capacity(&self) -> usize {
+    pub fn rx_fifo_capacity(&self) -> usize {
         FIFO_SIZE - self.in_buffer.len()
+    }
+
+    /// Returns how much space is still available in the transmitter FIFO.
+    #[inline]
+    pub fn tx_fifo_capacity(&self) -> usize {
+        FIFO_SIZE - self.tx_fifo_len
     }
 
     /// Helps in sending more bytes to the guest in one shot, by storing
@@ -511,10 +529,10 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
     pub fn enqueue_raw_bytes(&mut self, input: &[u8]) -> Result<usize, Error<T::E>> {
         let mut write_count = 0;
         if !self.is_in_loop_mode() {
-            if self.fifo_capacity() == 0 {
+            if self.rx_fifo_capacity() == 0 {
                 return Err(Error::FullFifo);
             }
-            write_count = std::cmp::min(self.fifo_capacity(), input.len());
+            write_count = std::cmp::min(self.rx_fifo_capacity(), input.len());
             if write_count > 0 {
                 self.in_buffer.extend(&input[0..write_count]);
                 self.set_lsr_rda_bit();
@@ -619,13 +637,24 @@ mod tests {
     #[test]
     fn test_serial_thr() {
         let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
-        let mut serial = Serial::new(intr_evt.try_clone().unwrap(), sink());
+        let mut out_buf = [0; FIFO_SIZE];
+        let mut serial = Serial::new(intr_evt.try_clone().unwrap(), out_buf.as_mut());
 
         serial.write(IER_OFFSET, IER_THR_EMPTY_BIT).unwrap();
         assert_eq!(
             serial.interrupt_enable,
             IER_THR_EMPTY_BIT & IER_UART_VALID_BITS
         );
+        let _expected = io::Error::from(io::ErrorKind::WouldBlock);
+        for _ in 0..FIFO_SIZE - 1 {
+            serial.write(DATA_OFFSET, b'a').unwrap();
+            // match on the error on read to be EWOULDBLOCK
+            assert!(matches!(intr_evt.read().unwrap_err(), _expected));
+        }
+        let iir = serial.read(IIR_OFFSET);
+        // Verify no interrupt was raised by the serial.
+        assert_eq!(iir & IIR_THR_EMPTY_BIT, 0);
+
         serial.write(DATA_OFFSET, b'a').unwrap();
 
         // Verify the serial raised an interrupt.
@@ -826,14 +855,20 @@ mod tests {
 
     #[test]
     fn test_out_descrp_full_thre_sent() {
-        let mut nospace_buf = [0u8; 0];
+        let mut out_buf = [0u8; FIFO_SIZE];
         let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
-        let mut serial = Serial::new(intr_evt, nospace_buf.as_mut());
+        let mut serial = Serial::new(intr_evt, out_buf.as_mut());
 
         // Enable THR interrupt.
         serial.write(IER_OFFSET, IER_THR_EMPTY_BIT).unwrap();
 
-        // Write some data.
+        // Fill up the FIFO.
+        for _ in 0..FIFO_SIZE {
+            serial.write(DATA_OFFSET, 5).unwrap();
+        }
+        assert_eq!(serial.tx_fifo_capacity(), FIFO_SIZE);
+
+        // Now out_buf is full, next write should fail.
         let res = serial.write(DATA_OFFSET, 5);
         let iir = serial.read(IIR_OFFSET);
 
