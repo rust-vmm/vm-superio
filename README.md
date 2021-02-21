@@ -68,6 +68,7 @@ no effect).
 
 For a VMM to be able to use this device, the VMM needs to do the following:
 - add the RTC to the Bus (either PIO or MMIO)
+- provide a structure that implements RTCEvents to track the occurrence of significant events (optional)
 
 Note that because the Match Register is the only possible source of an event,
 and the Match Register is not currently implemented, no event handling

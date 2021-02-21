@@ -15,14 +15,14 @@ use std::time::Instant;
 //  device is 0x000 -> 0xFFC + 4 = 0x1000 bytes.
 
 // From 0x0 to 0x1C we have following registers:
-const RTCDR: u16 = 0x000; // Data Register.
+const RTCDR: u16 = 0x000; // Data Register (RO).
 const RTCMR: u16 = 0x004; // Match Register.
 const RTCLR: u16 = 0x008; // Load Register.
 const RTCCR: u16 = 0x00C; // Control Register.
 const RTCIMSC: u16 = 0x010; // Interrupt Mask Set or Clear Register.
-const RTCRIS: u16 = 0x014; // Raw Interrupt Status.
-const RTCMIS: u16 = 0x018; // Masked Interrupt Status.
-const RTCICR: u16 = 0x01C; // Interrupt Clear Register.
+const RTCRIS: u16 = 0x014; // Raw Interrupt Status (RO).
+const RTCMIS: u16 = 0x018; // Masked Interrupt Status (RO).
+const RTCICR: u16 = 0x01C; // Interrupt Clear Register (WO).
 
 // From 0x020 to 0xFDC => reserved space.
 
@@ -37,6 +37,31 @@ const AMBA_IDS: [u8; 8] = [0x31, 0x10, 0x04, 0x00, 0x0d, 0xf0, 0x05, 0xb1];
 // would normally be located.
 const AMBA_ID_LOW: u16 = 0xFE0;
 const AMBA_ID_HIGH: u16 = 0xFFF;
+
+/// Defines a series of callbacks that are invoked in response to the occurrence of specific
+/// failure or missed events as part of the RTC operation (e.g., write to an invalid offset). The
+/// methods below can be implemented by a backend that keeps track of such events by incrementing
+/// metrics, logging messages, or any other action.
+///
+/// We're using a trait to avoid constraining the concrete characteristics of the backend in
+/// any way, enabling zero-cost abstractions and use case-specific implementations.
+pub trait RTCEvents {
+    /// The driver attempts to read from an invalid offset.
+    fn invalid_read(&self);
+
+    /// The driver attempts to write to an invalid offset.
+    fn invalid_write(&self);
+}
+
+/// Provides a no-op implementation of `RTCEvents` which can be used in situations that
+/// do not require logging or otherwise doing anything in response to the events defined
+/// as part of `RTCEvents`.
+pub struct NoEvents;
+
+impl RTCEvents for NoEvents {
+    fn invalid_read(&self) {}
+    fn invalid_write(&self) {}
+}
 
 /// A PL031 Real Time Clock (RTC) that emulates a long time base counter.
 ///
@@ -73,7 +98,7 @@ const AMBA_ID_HIGH: u16 = 0xFFF;
 /// rtc.read(RTCDR, &mut data);
 /// assert!(u32::from_le_bytes(data) > (v as u32));
 /// ```
-pub struct RTC {
+pub struct RTC<EV: RTCEvents> {
     // Counts up from 1 on reset at 1Hz (emulated).
     counter: Instant,
 
@@ -94,16 +119,38 @@ pub struct RTC {
 
     // The raw interrupt value.
     ris: u32,
+
+    // Used for tracking the occurrence of significant events.
+    rtc_events: EV,
 }
 
-impl RTC {
-    /// Creates a new `AMBA PL031 RTC` instance.
+impl RTC<NoEvents> {
+    /// Creates a new `AMBA PL031 RTC` instance without any metric
+    /// capabilities.
     ///
     /// # Example
     ///
     /// You can see an example of how to use this function in the
     /// [`Example` section from `RTC`](struct.RTC.html#example).
-    pub fn new() -> RTC {
+    pub fn new() -> RTC<NoEvents> {
+        Self::with_events(NoEvents)
+    }
+}
+
+impl Default for RTC<NoEvents> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<EV: RTCEvents> RTC<EV> {
+    /// Creates a new `AMBA PL031 RTC` instance and invokes the `rtc_events`
+    /// implementation of `RTCEvents` during operation.
+    ///
+    /// # Arguments
+    /// * `rtc_events` - The `RTCEvents` implementation used to track the occurrence
+    ///                  of failure or missed events in the RTC operation.
+    pub fn with_events(rtc_events: EV) -> Self {
         RTC {
             // Counts up from 1 on reset at 1Hz (emulated).
             counter: Instant::now(),
@@ -120,6 +167,10 @@ impl RTC {
 
             // The raw interrupt is initialised as not asserted.
             ris: 0,
+
+            // A struct implementing RTCEvents for tracking the occurrence of
+            // significant events.
+            rtc_events,
         }
     }
 
@@ -147,7 +198,7 @@ impl RTC {
 
         match offset {
             RTCMR => {
-                // Set the match register, though this is not currently used.
+                // Set the match register.
                 // TODO: Implement the match register functionality.
                 self.mr = val;
             }
@@ -171,12 +222,15 @@ impl RTC {
                 self.imsc = val & 1;
             }
             RTCICR => {
-                // Writing 1 clears the interrupt.
+                // Writing 1 clears the interrupt; however, since the match
+                // register is unimplemented, this should never be necessary.
                 self.ris &= !val;
             }
             _ => {
-                // Writes to RTCDR, RTCRIS, RTCMIS, or an invalid offset
-                // are ignored.
+                // RTCDR, RTCRIS, and RTCMIS are read-only, so writes to these
+                // registers or to an invalid offset are ignored; however,
+                // We increment the invalid_write() method of the rtc_events struct.
+                self.rtc_events.invalid_write();
             }
         };
     }
@@ -201,7 +255,7 @@ impl RTC {
             match offset {
                 RTCDR => self.get_rtc_value(),
                 RTCMR => {
-                    // Read the match register, though this is not currently used.
+                    // Read the match register.
                     // TODO: Implement the match register functionality.
                     self.mr
                 }
@@ -211,7 +265,10 @@ impl RTC {
                 RTCRIS => self.ris,
                 RTCMIS => self.ris & self.imsc,
                 _ => {
-                    // If the offset is invalid, do nothing.
+                    // RTCICR is write only.  For reads of this register or
+                    // an invalid offset, call the invalid_read method of the
+                    // rtc_events struct and return.
+                    self.rtc_events.invalid_read();
                     return;
                 }
             }
@@ -221,29 +278,49 @@ impl RTC {
     }
 }
 
-impl Default for RTC {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
     use std::thread;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-    // TODO: Implement metrics with the rust-vmm crate
-    // use vmm_sys_util::metric::Metric;
+    use vmm_sys_util::metric::Metric;
+
+    #[derive(Default)]
+    struct ExampleRTCMetrics {
+        invalid_read_count: AtomicU64,
+        invalid_write_count: AtomicU64,
+    }
+
+    // We define this for `Arc<ExampleRTCMetrics>` because we expect to share a reference to
+    // the same object with other threads.
+    impl RTCEvents for Arc<ExampleRTCMetrics> {
+        fn invalid_read(&self) {
+            self.invalid_read_count.inc();
+            // We can also log a message here, or as part of any of the other methods.
+        }
+
+        fn invalid_write(&self) {
+            self.invalid_write_count.inc();
+        }
+    }
 
     #[test]
     fn test_data_register() {
         // Verify we can read the Data Register, but not write to it,
         // and that the Data Register RTC count increments over time.
-        // Also, test the Default constructor for RTC.
-        let mut rtc: RTC = Default::default();
+        // This also tests that the invalid write metric is incremented for
+        // writes to RTCDR.
+        let metrics = Arc::new(ExampleRTCMetrics::default());
+        let mut rtc = RTC::with_events(metrics);
         let mut data = [0; 4];
+
+        // Check metrics are equal to 0 at the beginning.
+        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 0);
 
         // Read the data register.
         rtc.read(RTCDR, &mut data);
@@ -268,12 +345,20 @@ mod tests {
         data = 0u32.to_le_bytes();
         rtc.write(RTCDR, &data);
 
+        // Invalid write should increment. All others should not change.
+        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 1);
+
         // Read the data register again.
         rtc.read(RTCDR, &mut data);
         let third_read = u32::from_le_bytes(data);
 
         // The third time should be greater than the second.
         assert!(third_read > second_read);
+
+        // Confirm metrics are unchanged.
+        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 1);
     }
 
     #[test]
@@ -284,9 +369,12 @@ mod tests {
         let mut rtc = RTC::new();
         let mut data: [u8; 4];
 
-        // Write to and read the value back out of the match register.
+        // Write to the match register.
         data = 123u32.to_le_bytes();
         rtc.write(RTCMR, &data);
+
+        // Read the value back out of the match register and confirm it was
+        // correctly written.
         rtc.read(RTCMR, &mut data);
         assert_eq!(123, u32::from_le_bytes(data));
     }
@@ -295,7 +383,8 @@ mod tests {
     fn test_load_register() {
         // Read and write to the load register to confirm we can both
         // set the RTC value forward and backward.
-        let mut rtc = RTC::new();
+        // This also tests the default RTC constructor.
+        let mut rtc: RTC<NoEvents> = Default::default();
         let mut data = [0; 4];
 
         // Get the RTC value with a load register of 0 (the initial value).
@@ -412,9 +501,15 @@ mod tests {
 
     #[test]
     fn test_interrupt_clear_register() {
-        // Test clearing the interrupt.
-        let mut rtc = RTC::new();
+        // Test clearing the interrupt. This also tests
+        // that the invalid read and write metrics are incremented.
+        let metrics = Arc::new(ExampleRTCMetrics::default());
+        let mut rtc = RTC::with_events(metrics);
         let mut data = [0; 4];
+
+        // Check metrics are equal to 0 at the beginning.
+        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 0);
 
         // Manually set the raw interrupt and interrupt mask.
         rtc.ris = 1;
@@ -430,6 +525,10 @@ mod tests {
         data = 1u32.to_le_bytes();
         rtc.write(RTCICR, &data);
 
+        // Metrics should not change.
+        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 0);
+
         // Confirm the raw and masked interrupts are cleared.
         rtc.read(RTCRIS, &mut data);
         assert_eq!(0, u32::from_le_bytes(data));
@@ -441,6 +540,10 @@ mod tests {
         rtc.read(RTCICR, &mut data);
         let v = u32::from_le_bytes(data);
         assert_eq!(v, 123);
+
+        // Invalid read should increment.  All others should not change.
+        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 1);
+        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 0);
     }
 
     #[test]
@@ -596,9 +699,15 @@ mod tests {
     #[test]
     fn test_invalid_write_offset() {
         // Test that writing to an invalid register offset has no effect
-        // on the RTC value (as read from the data register).
-        let mut rtc = RTC::new();
+        // on the RTC value (as read from the data register), and confirm
+        // the invalid write metric increments.
+        let metrics = Arc::new(ExampleRTCMetrics::default());
+        let mut rtc = RTC::with_events(metrics);
         let mut data = [0; 4];
+
+        // Check metrics are equal to 0 at the beginning.
+        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 0);
 
         // First test: Write to an address outside the expected range of
         // register memory.
@@ -611,6 +720,10 @@ mod tests {
         // register memory.
         data = 123u32.to_le_bytes();
         rtc.write(AMBA_ID_HIGH + 4, &mut data);
+
+        // Invalid write should increment.  All others should not change.
+        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 1);
 
         // Read the data register again.
         rtc.read(RTCDR, &mut data);
@@ -634,6 +747,10 @@ mod tests {
         data = 123u32.to_le_bytes();
         rtc.write(RTCLR + 1, &mut data);
 
+        // Invalid write should increment again.  All others should not change.
+        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 2);
+
         // Read the data register again.
         rtc.read(RTCDR, &mut data);
         let second_read = u32::from_le_bytes(data);
@@ -643,21 +760,40 @@ mod tests {
         // the first and second read of RTCDR (based on the RTC counter
         // tick rate being 1Hz).
         assert_eq!(second_read, first_read);
+
+        // Confirm neither metric has changed.
+        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 2);
     }
 
     #[test]
     fn test_invalid_read_offset() {
-        let mut rtc = RTC::new();
+        // Test that reading from an invalid register offset has no effect,
+        // and confirm the invalid read metric increments.
+        let metrics = Arc::new(ExampleRTCMetrics::default());
+        let mut rtc = RTC::with_events(metrics);
         let mut data: [u8; 4];
+
+        // Check metrics are equal to 0 at the beginning.
+        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 0);
 
         // Reading from a non-existent register should have no effect.
         data = 123u32.to_le_bytes();
         rtc.read(AMBA_ID_HIGH + 4, &mut data);
         assert_eq!(123, u32::from_le_bytes(data));
 
+        // Invalid read should increment. All others should not change.
+        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 1);
+        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 0);
+
         // Just to prove that AMBA_ID_HIGH + 4 doesn't contain 123...
         data = 321u32.to_le_bytes();
         rtc.read(AMBA_ID_HIGH + 4, &mut data);
         assert_eq!(321, u32::from_le_bytes(data));
+
+        // Invalid read should increment again. All others should not change.
+        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 2);
+        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 0);
     }
 }
