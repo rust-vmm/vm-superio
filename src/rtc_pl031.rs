@@ -7,6 +7,7 @@
 //! time base counter. This is achieved by generating an interrupt signal after
 //! counting for a programmed number of cycles of a real-time clock input.
 //!
+use std::sync::Arc;
 use std::time::Instant;
 
 // As you can see in
@@ -61,6 +62,16 @@ pub struct NoEvents;
 impl RTCEvents for NoEvents {
     fn invalid_read(&self) {}
     fn invalid_write(&self) {}
+}
+
+impl<EV: RTCEvents> RTCEvents for Arc<EV> {
+    fn invalid_read(&self) {
+        self.as_ref().invalid_read();
+    }
+
+    fn invalid_write(&self) {
+        self.as_ref().invalid_write();
+    }
 }
 
 /// A PL031 Real Time Clock (RTC) that emulates a long time base counter.
@@ -300,9 +311,7 @@ mod tests {
         invalid_write_count: AtomicU64,
     }
 
-    // We define this for `Arc<ExampleRTCMetrics>` because we expect to share a reference to
-    // the same object with other threads.
-    impl RTCEvents for Arc<ExampleRTCMetrics> {
+    impl RTCEvents for ExampleRTCMetrics {
         fn invalid_read(&self) {
             self.invalid_read_count.inc();
             // We can also log a message here, or as part of any of the other methods.
