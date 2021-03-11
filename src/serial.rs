@@ -222,7 +222,7 @@ pub struct Serial<T: Trigger, EV: SerialEvents, W: Write> {
 
     // Used for notifying the driver about some in/out events.
     interrupt_evt: T,
-    serial_evts: EV,
+    events: EV,
     out: W,
 }
 
@@ -287,7 +287,7 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
             scratch: DEFAULT_SCRATCH,
             in_buffer: VecDeque::new(),
             interrupt_evt: trigger,
-            serial_evts,
+            events: serial_evts,
             out,
         }
     }
@@ -298,8 +298,8 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
     }
 
     /// Provides a reference to the serial events object.
-    pub fn serial_evts(&self) -> &EV {
-        &self.serial_evts
+    pub fn events(&self) -> &EV {
+        &self.events
     }
 
     fn is_dlab_set(&self) -> bool {
@@ -405,13 +405,13 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
                         .write_all(&[value])
                         .map_err(Error::IOError)
                         .and_then(|_| self.out.flush().map_err(Error::IOError))
-                        .map(|_| self.serial_evts.out_byte())
+                        .map(|_| self.events.out_byte())
                         .map_err(|err| {
-                            self.serial_evts.tx_lost_byte();
+                            self.events.tx_lost_byte();
                             err
                         });
                     // Because we cannot block the driver, the THRE interrupt is sent
-                    // irrespective of wheather we are able to write the byte or not
+                    // irrespective of whether we are able to write the byte or not
                     self.thr_empty_interrupt().map_err(Error::Trigger)?;
                     return res;
                 }
@@ -454,7 +454,7 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
                     self.clear_lsr_rda_bit();
                 }
 
-                self.serial_evts.buffer_read();
+                self.events.buffer_read();
                 self.in_buffer.pop_front().unwrap_or_default()
             }
             IER_OFFSET => self.interrupt_enable,
@@ -817,29 +817,29 @@ mod tests {
         let mut serial = Serial::with_events(intr_evt, metrics, oneslot_buf.as_mut());
 
         // Check everything is equal to 0 at the beginning.
-        assert_eq!(serial.serial_evts.read_count.count(), 0);
-        assert_eq!(serial.serial_evts.out_byte_count.count(), 0);
-        assert_eq!(serial.serial_evts.tx_lost_byte_count.count(), 0);
+        assert_eq!(serial.events.read_count.count(), 0);
+        assert_eq!(serial.events.out_byte_count.count(), 0);
+        assert_eq!(serial.events.tx_lost_byte_count.count(), 0);
 
         // This DATA read should cause the `SerialEvents::buffer_read` method to be invoked.
         serial.read(DATA_OFFSET);
-        assert_eq!(serial.serial_evts.read_count.count(), 1);
+        assert_eq!(serial.events.read_count.count(), 1);
 
         // This DATA write should cause `SerialEvents::out_byte` to be called.
         serial.write(DATA_OFFSET, 1).unwrap();
-        assert_eq!(serial.serial_evts.out_byte_count.count(), 1);
+        assert_eq!(serial.events.out_byte_count.count(), 1);
         // `SerialEvents::tx_lost_byte` should not have been called.
-        assert_eq!(serial.serial_evts.tx_lost_byte_count.count(), 0);
+        assert_eq!(serial.events.tx_lost_byte_count.count(), 0);
 
         // This DATA write should cause `SerialEvents::tx_lost_byte` to be called.
         serial.write(DATA_OFFSET, 1).unwrap_err();
-        assert_eq!(serial.serial_evts.tx_lost_byte_count.count(), 1);
+        assert_eq!(serial.events.tx_lost_byte_count.count(), 1);
 
         // Check that every metric has the expected value at the end, to ensure we didn't
         // unexpectedly invoked any extra callbacks.
-        assert_eq!(serial.serial_evts.read_count.count(), 1);
-        assert_eq!(serial.serial_evts.out_byte_count.count(), 1);
-        assert_eq!(serial.serial_evts.tx_lost_byte_count.count(), 1);
+        assert_eq!(serial.events.read_count.count(), 1);
+        assert_eq!(serial.events.out_byte_count.count(), 1);
+        assert_eq!(serial.events.tx_lost_byte_count.count(), 1);
     }
 
     #[test]

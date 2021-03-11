@@ -87,7 +87,7 @@ For the serial console, there is no monitoring of the amount of data that is
 written to the `out` object.
 
 *Threat*: A malicious guest can fill up the host disk by generating a high
-amount of data to be written to the serial output.
+amount of data to be written to the serial output.  
 *Mitigation*: There is no mitigation implemented at the serial console emulation
 level. To mitigate this at the VMM level, it is recommended to use as output a
 resource that has a fixed size (e.g. ring buffer or a named pipe).
