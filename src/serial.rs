@@ -13,6 +13,7 @@
 use std::collections::VecDeque;
 use std::io::{self, Write};
 use std::result::Result;
+use std::sync::Arc;
 
 use crate::Trigger;
 
@@ -127,6 +128,20 @@ impl SerialEvents for NoEvents {
     fn buffer_read(&self) {}
     fn out_byte(&self) {}
     fn tx_lost_byte(&self) {}
+}
+
+impl<EV: SerialEvents> SerialEvents for Arc<EV> {
+    fn buffer_read(&self) {
+        self.as_ref().buffer_read();
+    }
+
+    fn out_byte(&self) {
+        self.as_ref().out_byte();
+    }
+
+    fn tx_lost_byte(&self) {
+        self.as_ref().tx_lost_byte();
+    }
 }
 
 /// The serial console emulation is done by emulating a serial COM port.
@@ -558,9 +573,7 @@ mod tests {
         tx_lost_byte_count: AtomicU64,
     }
 
-    // We define this for `Arc<ExampleSerialMetrics>` because we expect to share a reference to
-    // the same object with other threads.
-    impl SerialEvents for Arc<ExampleSerialMetrics> {
+    impl SerialEvents for ExampleSerialMetrics {
         fn buffer_read(&self) {
             self.read_count.inc();
             // We can also log a message here, or as part of any of the other methods.
