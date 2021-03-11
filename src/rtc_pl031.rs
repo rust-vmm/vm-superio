@@ -174,6 +174,11 @@ impl<EV: RTCEvents> RTC<EV> {
         }
     }
 
+    /// Provides a reference to the RTC events object.
+    pub fn rtc_evts(&self) -> &EV {
+        &self.rtc_events
+    }
+
     fn get_rtc_value(&self) -> u32 {
         // Add the counter offset to the seconds elapsed since reset.
         // Using wrapping_add() eliminates the possibility of a panic

@@ -282,6 +282,11 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
         &self.interrupt_evt
     }
 
+    /// Provides a reference to the serial events object.
+    pub fn serial_evts(&self) -> &EV {
+        &self.serial_evts
+    }
+
     fn is_dlab_set(&self) -> bool {
         (self.line_control & LCR_DLAB_BIT) != 0
     }
