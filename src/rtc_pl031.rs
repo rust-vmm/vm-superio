@@ -132,7 +132,7 @@ pub struct RTC<EV: RTCEvents> {
     ris: u32,
 
     // Used for tracking the occurrence of significant events.
-    rtc_events: EV,
+    events: EV,
 }
 
 impl RTC<NoEvents> {
@@ -181,13 +181,13 @@ impl<EV: RTCEvents> RTC<EV> {
 
             // A struct implementing RTCEvents for tracking the occurrence of
             // significant events.
-            rtc_events,
+            events: rtc_events,
         }
     }
 
     /// Provides a reference to the RTC events object.
-    pub fn rtc_evts(&self) -> &EV {
-        &self.rtc_events
+    pub fn events(&self) -> &EV {
+        &self.events
     }
 
     fn get_rtc_value(&self) -> u32 {
@@ -245,8 +245,8 @@ impl<EV: RTCEvents> RTC<EV> {
             _ => {
                 // RTCDR, RTCRIS, and RTCMIS are read-only, so writes to these
                 // registers or to an invalid offset are ignored; however,
-                // We increment the invalid_write() method of the rtc_events struct.
-                self.rtc_events.invalid_write();
+                // We increment the invalid_write() method of the events struct.
+                self.events.invalid_write();
             }
         };
     }
@@ -283,8 +283,8 @@ impl<EV: RTCEvents> RTC<EV> {
                 _ => {
                     // RTCICR is write only.  For reads of this register or
                     // an invalid offset, call the invalid_read method of the
-                    // rtc_events struct and return.
-                    self.rtc_events.invalid_read();
+                    // events struct and return.
+                    self.events.invalid_read();
                     return;
                 }
             }
@@ -333,8 +333,8 @@ mod tests {
         let mut data = [0; 4];
 
         // Check metrics are equal to 0 at the beginning.
-        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
-        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 0);
+        assert_eq!(rtc.events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.events.invalid_write_count.count(), 0);
 
         // Read the data register.
         rtc.read(RTCDR, &mut data);
@@ -360,8 +360,8 @@ mod tests {
         rtc.write(RTCDR, &data);
 
         // Invalid write should increment. All others should not change.
-        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
-        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 1);
+        assert_eq!(rtc.events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.events.invalid_write_count.count(), 1);
 
         // Read the data register again.
         rtc.read(RTCDR, &mut data);
@@ -371,8 +371,8 @@ mod tests {
         assert!(third_read > second_read);
 
         // Confirm metrics are unchanged.
-        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
-        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 1);
+        assert_eq!(rtc.events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.events.invalid_write_count.count(), 1);
     }
 
     #[test]
@@ -522,8 +522,8 @@ mod tests {
         let mut data = [0; 4];
 
         // Check metrics are equal to 0 at the beginning.
-        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
-        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 0);
+        assert_eq!(rtc.events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.events.invalid_write_count.count(), 0);
 
         // Manually set the raw interrupt and interrupt mask.
         rtc.ris = 1;
@@ -540,8 +540,8 @@ mod tests {
         rtc.write(RTCICR, &data);
 
         // Metrics should not change.
-        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
-        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 0);
+        assert_eq!(rtc.events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.events.invalid_write_count.count(), 0);
 
         // Confirm the raw and masked interrupts are cleared.
         rtc.read(RTCRIS, &mut data);
@@ -556,8 +556,8 @@ mod tests {
         assert_eq!(v, 123);
 
         // Invalid read should increment.  All others should not change.
-        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 1);
-        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 0);
+        assert_eq!(rtc.events.invalid_read_count.count(), 1);
+        assert_eq!(rtc.events.invalid_write_count.count(), 0);
     }
 
     #[test]
@@ -720,8 +720,8 @@ mod tests {
         let mut data = [0; 4];
 
         // Check metrics are equal to 0 at the beginning.
-        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
-        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 0);
+        assert_eq!(rtc.events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.events.invalid_write_count.count(), 0);
 
         // First test: Write to an address outside the expected range of
         // register memory.
@@ -736,8 +736,8 @@ mod tests {
         rtc.write(AMBA_ID_HIGH + 4, &mut data);
 
         // Invalid write should increment.  All others should not change.
-        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
-        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 1);
+        assert_eq!(rtc.events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.events.invalid_write_count.count(), 1);
 
         // Read the data register again.
         rtc.read(RTCDR, &mut data);
@@ -762,8 +762,8 @@ mod tests {
         rtc.write(RTCLR + 1, &mut data);
 
         // Invalid write should increment again.  All others should not change.
-        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
-        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 2);
+        assert_eq!(rtc.events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.events.invalid_write_count.count(), 2);
 
         // Read the data register again.
         rtc.read(RTCDR, &mut data);
@@ -776,8 +776,8 @@ mod tests {
         assert_eq!(second_read, first_read);
 
         // Confirm neither metric has changed.
-        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
-        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 2);
+        assert_eq!(rtc.events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.events.invalid_write_count.count(), 2);
     }
 
     #[test]
@@ -789,8 +789,8 @@ mod tests {
         let mut data: [u8; 4];
 
         // Check metrics are equal to 0 at the beginning.
-        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 0);
-        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 0);
+        assert_eq!(rtc.events.invalid_read_count.count(), 0);
+        assert_eq!(rtc.events.invalid_write_count.count(), 0);
 
         // Reading from a non-existent register should have no effect.
         data = 123u32.to_le_bytes();
@@ -798,8 +798,8 @@ mod tests {
         assert_eq!(123, u32::from_le_bytes(data));
 
         // Invalid read should increment. All others should not change.
-        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 1);
-        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 0);
+        assert_eq!(rtc.events.invalid_read_count.count(), 1);
+        assert_eq!(rtc.events.invalid_write_count.count(), 0);
 
         // Just to prove that AMBA_ID_HIGH + 4 doesn't contain 123...
         data = 321u32.to_le_bytes();
@@ -807,7 +807,7 @@ mod tests {
         assert_eq!(321, u32::from_le_bytes(data));
 
         // Invalid read should increment again. All others should not change.
-        assert_eq!(rtc.rtc_events.invalid_read_count.count(), 2);
-        assert_eq!(rtc.rtc_events.invalid_write_count.count(), 0);
+        assert_eq!(rtc.events.invalid_read_count.count(), 2);
+        assert_eq!(rtc.events.invalid_write_count.count(), 0);
     }
 }
