@@ -733,7 +733,7 @@ mod tests {
         // Attempt to write to an address outside the expected range of
         // register memory.
         data = 123u32.to_le_bytes();
-        rtc.write(AMBA_ID_HIGH + 4, &mut data);
+        rtc.write(AMBA_ID_HIGH + 4, &data);
 
         // Invalid write should increment.  All others should not change.
         assert_eq!(rtc.events.invalid_read_count.count(), 0);
@@ -759,7 +759,7 @@ mod tests {
         // Attempt to write to an invalid register address close to the load
         // register's address.
         data = 123u32.to_le_bytes();
-        rtc.write(RTCLR + 1, &mut data);
+        rtc.write(RTCLR + 1, &data);
 
         // Invalid write should increment again.  All others should not change.
         assert_eq!(rtc.events.invalid_read_count.count(), 0);
