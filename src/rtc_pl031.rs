@@ -7,8 +7,9 @@
 //! time base counter. This is achieved by generating an interrupt signal after
 //! counting for a programmed number of cycles of a real-time clock input.
 //!
+use std::convert::TryFrom;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // As you can see in
 //  https://static.docs.arm.com/ddi0224/c/real_time_clock_pl031_r1p3_technical_reference_manual_DDI0224C.pdf
@@ -110,11 +111,11 @@ impl<EV: RTCEvents> RTCEvents for Arc<EV> {
 /// assert!(u32::from_le_bytes(data) > (v as u32));
 /// ```
 pub struct RTC<EV: RTCEvents> {
-    // Counts up from 1 on reset at 1Hz (emulated).
-    counter: Instant,
-
-    // The offset value applied to the counter to get the RTC value.
+    // The load register.
     lr: u32,
+
+    // The offset applied to the counter to get the RTC value.
+    offset: i64,
 
     // The MR register is used for implementing the RTC alarm. A
     // real time clock alarm is a feature that can be used to allow
@@ -133,6 +134,19 @@ pub struct RTC<EV: RTCEvents> {
 
     // Used for tracking the occurrence of significant events.
     events: EV,
+}
+
+fn get_current_time() -> u32 {
+    let epoch_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        // This expect should never fail because UNIX_EPOCH is in 1970,
+        // and the only possible failure is if `now` time is before UNIX EPOCH.
+        .expect("SystemTime::duration_since failed");
+    // The following conversation is safe because u32::MAX would correspond to
+    // year 2106. By then we would not be able to use the RTC in its
+    // current form because RTC only works with 32-bits registers, and a bigger
+    // time value would not fit.
+    epoch_time.as_secs() as u32
 }
 
 impl RTC<NoEvents> {
@@ -163,11 +177,10 @@ impl<EV: RTCEvents> RTC<EV> {
     ///                  of failure or missed events in the RTC operation.
     pub fn with_events(rtc_events: EV) -> Self {
         RTC {
-            // Counts up from 1 on reset at 1Hz (emulated).
-            counter: Instant::now(),
-
-            // The load register is initialized to zero.
+            // The load register is initialized to 0.
             lr: 0,
+
+            offset: 0,
 
             // The match register is initialised to zero (not currently used).
             // TODO: Implement the match register functionality.
@@ -191,10 +204,14 @@ impl<EV: RTCEvents> RTC<EV> {
     }
 
     fn get_rtc_value(&self) -> u32 {
-        // Add the counter offset to the seconds elapsed since reset.
-        // Using wrapping_add() eliminates the possibility of a panic
-        // and makes the desired behaviour (a wrap) explicit.
-        (self.counter.elapsed().as_secs() as u32).wrapping_add(self.lr)
+        // The RTC value is the time + offset as per:
+        // https://developer.arm.com/documentation/ddi0224/c/Functional-overview/RTC-functional-description/Update-block
+        //
+        // The addition cannot fail because the current time can be maximum u32,
+        // and the offset is always < u32::MAX. The addition is thus < u32::MAX * 2,
+        // which fits in an i64.
+        // In the unlikely case of the value not fitting in an u32, we just reset the time to 0.
+        u32::try_from((get_current_time() as i64) + self.offset).unwrap_or(0)
     }
 
     /// Handles a write request from the driver at `offset` offset from the
@@ -219,18 +236,22 @@ impl<EV: RTCEvents> RTC<EV> {
                 self.mr = val;
             }
             RTCLR => {
-                // Writing to the load register adjusts both the load register
-                // and the counter to ensure that a write to RTCLR followed by
-                // an immediate read of RTCDR will return the loaded value.
-                self.counter = Instant::now();
+                // The guest can make adjustments to its time by writing to
+                // this register. When these adjustments happen, we calculate the
+                // offset as the difference between the LR value and the host time.
+                // This offset is later used to calculate the RTC value (see
+                // `get_rtc_value`).
                 self.lr = val;
+                // Both ls & offset are u32, hence the following
+                // conversions are safe, and the result fits in an i64.
+                self.offset = self.lr as i64 - get_current_time() as i64;
             }
             RTCCR => {
                 // Writing 1 to the control register resets the RTC value,
-                // which means both the counter and load register are reset.
+                // which means both the counter and the offset are reset.
                 if val == 1 {
-                    self.counter = Instant::now();
                     self.lr = 0;
+                    self.offset = 0;
                 }
             }
             RTCIMSC => {
@@ -301,7 +322,7 @@ mod tests {
     use std::sync::atomic::AtomicU64;
     use std::sync::Arc;
     use std::thread;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::Duration;
 
     use vmm_sys_util::metric::Metric;
 
@@ -320,6 +341,21 @@ mod tests {
         fn invalid_write(&self) {
             self.invalid_write_count.inc();
         }
+    }
+
+    #[test]
+    fn test_regression_year_1970() {
+        // This is a regression test for: https://github.com/rust-vmm/vm-superio/issues/47.
+        // The problem is that the time in the guest would show up as in the 1970s.
+        let mut rtc = RTC::new();
+        let expected_time = get_current_time();
+
+        let mut actual_time = [0u8; 4];
+        rtc.read(RTCDR, &mut actual_time);
+        // Check that the difference between the current time, and the time read from the
+        // RTC device is never bigger than one second. This should hold true irrespective of
+        // scheduling.
+        assert!(u32::from_le_bytes(actual_time) - expected_time <= 1);
     }
 
     #[test]
@@ -401,16 +437,14 @@ mod tests {
         let mut rtc: RTC<NoEvents> = Default::default();
         let mut data = [0; 4];
 
-        // Get the RTC value with a load register of 0 (the initial value).
+        // Get the RTC value with a load register of UNIX EPOCH
+        // (the initial value).
         rtc.read(RTCDR, &mut data);
         let old_val = u32::from_le_bytes(data);
 
-        // Write system time since UNIX_EPOCH in seconds to the load register.
-        let lr = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        data = (lr as u32).to_le_bytes();
+        // Increment LR and verify that the value was updated.
+        let lr = get_current_time() + 100;
+        data = lr.to_le_bytes();
         rtc.write(RTCLR, &data);
 
         // Read the load register and verify it matches the value just loaded.
@@ -428,9 +462,25 @@ mod tests {
         let new_val = u32::from_le_bytes(data);
         assert!(new_val > old_val);
 
-        // Sleep for 1.5 seconds to let the counter tick.
-        let delay = Duration::from_millis(1500);
-        thread::sleep(delay);
+        // Set the LR in the past, and check that the RTC value is updated.
+        let lr = get_current_time() - 100;
+        data = lr.to_le_bytes();
+        rtc.write(RTCLR, &data);
+
+        rtc.read(RTCDR, &mut data);
+        let rtc_value = u32::from_le_bytes(data);
+        assert!(rtc_value < get_current_time());
+
+        // Checking that setting the maximum possible value for the LR does
+        // not cause overflows.
+        let lr = u32::MAX;
+        data = (lr as u32).to_le_bytes();
+        rtc.write(RTCLR, &data);
+        rtc.read(RTCDR, &mut data);
+        assert!(rtc.offset > -(u32::MAX as i64) && rtc.offset < u32::MAX as i64);
+        // We're checking that this is not 0 because that's the value we're
+        // setting in case the DR value does not fit in an u32.
+        assert_ne!(u32::from_le_bytes(data), 0);
 
         // Reset the RTC value to 0 and confirm it was reset.
         let lr = 0;
@@ -567,11 +617,8 @@ mod tests {
         let mut rtc = RTC::new();
         let mut data: [u8; 4];
 
-        // Write system time since UNIX_EPOCH in seconds to the load register.
-        let lr = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        // Let's move the guest time in the future.
+        let lr = get_current_time() + 100;
         data = (lr as u32).to_le_bytes();
         rtc.write(RTCLR, &data);
 
