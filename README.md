@@ -6,7 +6,7 @@ this support only for the
 [Linux serial console](https://en.wikipedia.org/wiki/Linux_console), a minimal
 [i8042 PS/2 Controller](https://wiki.osdev.org/%228042%22_PS/2_Controller) and
 an
-[ARM PL031 Real Time Clock](https://static.docs.arm.com/ddi0224/c/real_time_clock_pl031_r1p3_technical_reference_manual_DDI0224C.pdf).
+[ARM PL031 Real Time Clock](https://developer.arm.com/documentation/ddi0224/c/Programmers-model).
 
 ## Serial Console
 
