@@ -92,21 +92,21 @@ impl<EV: RTCEvents> RTCEvents for Arc<EV> {
 /// const RTCLR: u16 = 0x8; // Load Register.
 ///
 /// // Write system time since UNIX_EPOCH in seconds to the load register.
-/// let v = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-/// data = (v as u32).to_le_bytes();
+/// let v = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u32;
+/// data = v.to_le_bytes();
 /// rtc.write(RTCLR, &data);
 ///
 /// // Read the value back out of the load register.
 /// rtc.read(RTCLR, &mut data);
-/// assert_eq!((v as u32), u32::from_le_bytes(data));
+/// assert_eq!(v, u32::from_le_bytes(data));
 ///
 /// // Sleep for 1.5 seconds to let the counter tick.
 /// let delay = Duration::from_millis(1500);
 /// thread::sleep(delay);
 ///
-/// // Read the current RTC value from the Data Register
+/// // Read the current RTC value from the Data Register.
 /// rtc.read(RTCDR, &mut data);
-/// assert!(u32::from_le_bytes(data) > (v as u32));
+/// assert!(u32::from_le_bytes(data) > v);
 /// ```
 pub struct RTC<EV: RTCEvents> {
     // The load register.
@@ -446,14 +446,14 @@ mod tests {
 
         // Read the load register and verify it matches the value just loaded.
         rtc.read(RTCLR, &mut data);
-        assert_eq!((lr as u32), u32::from_le_bytes(data));
+        assert_eq!(lr, u32::from_le_bytes(data));
 
         // Read the data register and verify it matches the value just loaded.
         // Note that this assumes less than 1 second has elapsed between
         // setting RTCLR and this read (based on the RTC counter
         // tick rate being 1Hz).
         rtc.read(RTCDR, &mut data);
-        assert_eq!((lr as u32), u32::from_le_bytes(data));
+        assert_eq!(lr, u32::from_le_bytes(data));
 
         // Confirm that the new RTC value is greater than the old
         let new_val = u32::from_le_bytes(data);
@@ -471,7 +471,7 @@ mod tests {
         // Checking that setting the maximum possible value for the LR does
         // not cause overflows.
         let lr = u32::MAX;
-        data = (lr as u32).to_le_bytes();
+        data = lr.to_le_bytes();
         rtc.write(RTCLR, &data);
         rtc.read(RTCDR, &mut data);
         assert!(rtc.offset > -(u32::MAX as i64) && rtc.offset < u32::MAX as i64);
@@ -480,13 +480,13 @@ mod tests {
         assert_ne!(u32::from_le_bytes(data), 0);
 
         // Reset the RTC value to 0 and confirm it was reset.
-        let lr = 0;
-        data = (lr as u32).to_le_bytes();
+        let lr = 0u32;
+        data = lr.to_le_bytes();
         rtc.write(RTCLR, &data);
 
         // Read the data register and verify it has been reset.
         rtc.read(RTCDR, &mut data);
-        assert_eq!((lr as u32), u32::from_le_bytes(data));
+        assert_eq!(lr, u32::from_le_bytes(data));
     }
 
     #[test]
@@ -616,7 +616,7 @@ mod tests {
 
         // Let's move the guest time in the future.
         let lr = get_current_time() + 100;
-        data = (lr as u32).to_le_bytes();
+        data = lr.to_le_bytes();
         rtc.write(RTCLR, &data);
 
         // Get the RTC value.
