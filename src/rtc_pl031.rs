@@ -140,7 +140,7 @@ fn get_current_time() -> u32 {
         // This expect should never fail because UNIX_EPOCH is in 1970,
         // and the only possible failure is if `now` time is before UNIX EPOCH.
         .expect("SystemTime::duration_since failed");
-    // The following conversation is safe because u32::MAX would correspond to
+    // The following conversion is safe because u32::MAX would correspond to
     // year 2106. By then we would not be able to use the RTC in its
     // current form because RTC only works with 32-bits registers, and a bigger
     // time value would not fit.
@@ -240,13 +240,13 @@ impl<EV: RTCEvents> RTC<EV> {
                 // This offset is later used to calculate the RTC value (see
                 // `get_rtc_value`).
                 self.lr = val;
-                // Both ls & offset are u32, hence the following
+                // Both lr & offset are u32, hence the following
                 // conversions are safe, and the result fits in an i64.
                 self.offset = self.lr as i64 - get_current_time() as i64;
             }
             RTCCR => {
                 // Writing 1 to the control register resets the RTC value,
-                // which means both the counter and the offset are reset.
+                // which means both the load register and the offset are reset.
                 if val == 1 {
                     self.lr = 0;
                     self.offset = 0;
@@ -435,8 +435,7 @@ mod tests {
         let mut rtc: RTC<NoEvents> = Default::default();
         let mut data = [0; 4];
 
-        // Get the RTC value with a load register of UNIX EPOCH
-        // (the initial value).
+        // Get the RTC value with a load register of 0 (the initial value).
         rtc.read(RTCDR, &mut data);
         let old_val = u32::from_le_bytes(data);
 
