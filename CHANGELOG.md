@@ -1,5 +1,12 @@
 # Changelog
 
+# v0.3.0
+
+## Fixed
+
+- Fixed implementation of Data Register (DR) which caused the guest time to be
+  in the year 1970 ([#47](https://github.com/rust-vmm/vm-superio/issues/47)).
+
 # v0.2.0
 
 ## Added
