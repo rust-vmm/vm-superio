@@ -134,6 +134,21 @@ pub struct Rtc<EV: RtcEvents> {
     events: EV,
 }
 
+/// The state of the Rtc device.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RtcState {
+    /// The load register.
+    pub lr: u32,
+    /// The offset applied to the counter to get the RTC value.
+    pub offset: i64,
+    /// The MR register.
+    pub mr: u32,
+    /// The interrupt mask.
+    pub imsc: u32,
+    /// The raw interrupt value.
+    pub ris: u32,
+}
+
 fn get_current_time() -> u32 {
     let epoch_time = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -147,52 +162,79 @@ fn get_current_time() -> u32 {
     epoch_time.as_secs() as u32
 }
 
-impl Rtc<NoEvents> {
-    /// Creates a new `AMBA PL031 RTC` instance without any metric
-    /// capabilities.
-    ///
-    /// # Example
-    ///
-    /// You can see an example of how to use this function in the
-    /// [`Example` section from `Rtc`](struct.Rtc.html#example).
-    pub fn new() -> Rtc<NoEvents> {
-        Self::with_events(NoEvents)
-    }
-}
-
 impl Default for Rtc<NoEvents> {
     fn default() -> Self {
         Self::new()
     }
 }
 
+// This is the state from which a fresh Rtc can be created.
+impl Default for RtcState {
+    fn default() -> Self {
+        RtcState {
+            // The load register is initialized to 0.
+            lr: 0,
+            offset: 0,
+            // The match register is initialised to zero (not currently used).
+            // TODO: Implement the match register functionality.
+            mr: 0,
+            // The interrupt mask is initialised as not set.
+            imsc: 0,
+            // The raw interrupt is initialised as not asserted.
+            ris: 0,
+        }
+    }
+}
+
+impl Rtc<NoEvents> {
+    /// Creates a new `AMBA PL031 RTC` instance without any metric capabilities. The instance is
+    /// created from the default state.
+    pub fn new() -> Self {
+        Self::from_state(&RtcState::default(), NoEvents)
+    }
+}
+
 impl<EV: RtcEvents> Rtc<EV> {
-    /// Creates a new `AMBA PL031 RTC` instance and invokes the `rtc_events`
-    /// implementation of `RtcEvents` during operation.
+    /// Creates a new `AMBA PL031 RTC` instance from a given `state` and that is able to track
+    /// events during operation using the passed `rtc_events` object.
+    /// For creating the instance from a fresh state, [`with_events`](#method.with_events) or
+    /// [`new`](#method.new) methods can be used.
+    ///
+    /// # Arguments
+    /// * `state` - A reference to the state from which the `Rtc` is constructed.
+    /// * `rtc_events` - The `RtcEvents` implementation used to track the occurrence
+    ///                  of failure or missed events in the RTC operation.
+    pub fn from_state(state: &RtcState, rtc_events: EV) -> Self {
+        Rtc {
+            lr: state.lr,
+            offset: state.offset,
+            mr: state.mr,
+            imsc: state.imsc,
+            ris: state.ris,
+            // A struct implementing `RtcEvents` for tracking the occurrence of
+            // significant events.
+            events: rtc_events,
+        }
+    }
+
+    /// Creates a new `AMBA PL031 RTC` instance that is able to track events during operation using
+    /// the passed `rtc_events` object. The instance is created from the default state.
     ///
     /// # Arguments
     /// * `rtc_events` - The `RtcEvents` implementation used to track the occurrence
     ///                  of failure or missed events in the RTC operation.
     pub fn with_events(rtc_events: EV) -> Self {
-        Rtc {
-            // The load register is initialized to 0.
-            lr: 0,
+        Self::from_state(&RtcState::default(), rtc_events)
+    }
 
-            offset: 0,
-
-            // The match register is initialised to zero (not currently used).
-            // TODO: Implement the match register functionality.
-            mr: 0,
-
-            // The interrupt mask is initialised as not set.
-            imsc: 0,
-
-            // The raw interrupt is initialised as not asserted.
-            ris: 0,
-
-            // A struct implementing RtcEvents for tracking the occurrence of
-            // significant events.
-            events: rtc_events,
+    /// Returns the state of the RTC.
+    pub fn state(&self) -> RtcState {
+        RtcState {
+            lr: self.lr,
+            offset: self.offset,
+            mr: self.mr,
+            imsc: self.imsc,
+            ris: self.ris,
         }
     }
 
@@ -853,5 +895,65 @@ mod tests {
         // Invalid read should increment again. All others should not change.
         assert_eq!(rtc.events.invalid_read_count.count(), 2);
         assert_eq!(rtc.events.invalid_write_count.count(), 0);
+    }
+
+    #[test]
+    fn test_state() {
+        let metrics = Arc::new(ExampleRtcMetrics::default());
+        let mut rtc = Rtc::with_events(metrics);
+        let mut data = [0; 4];
+
+        // Get the RTC value with a load register of 0 (the initial value).
+        rtc.read(RTCDR, &mut data);
+        let first_read = u32::from_le_bytes(data);
+
+        // Increment LR and verify that the value was updated.
+        let lr = get_current_time() + 100;
+        data = lr.to_le_bytes();
+        rtc.write(RTCLR, &data);
+
+        let state = rtc.state();
+        rtc.read(RTCLR, &mut data);
+        assert_eq!(state.lr.to_le_bytes(), data);
+
+        // Do an invalid `write` in order to increment a metric.
+        let mut data2 = 123u32.to_le_bytes();
+        rtc.write(AMBA_ID_HIGH + 4, &data2);
+        assert_eq!(rtc.events.invalid_write_count.count(), 1);
+
+        let metrics = Arc::new(ExampleRtcMetrics::default());
+        let mut rtc_from_state = Rtc::from_state(&state, metrics.clone());
+        let state_after_restore = rtc_from_state.state();
+
+        // Check that the old and the new state are identical.
+        assert_eq!(state, state_after_restore);
+
+        // Read the data register again.
+        rtc.read(RTCDR, &mut data);
+        let second_read = u32::from_le_bytes(data);
+        // The RTC values should be different.
+        assert!(second_read > first_read);
+
+        // Reading from the LR register should return the same value as before saving the state.
+        rtc_from_state.read(RTCLR, &mut data2);
+        assert_eq!(data, data2);
+
+        // Check that the restored `Rtc` doesn't keep the state of the old `metrics` object.
+        assert_eq!(rtc_from_state.events.invalid_write_count.count(), 0);
+
+        // Let's increment again a metric, and this time save the state of events as well (separate
+        // from the base state).
+        // Do an invalid `write` in order to increment a metric.
+        let data3 = 123u32.to_le_bytes();
+        rtc_from_state.write(AMBA_ID_HIGH + 4, &data3);
+        assert_eq!(rtc_from_state.events.invalid_write_count.count(), 1);
+
+        let state2 = rtc_from_state.state();
+        // Mimic saving the metrics for the sake of the example.
+        let saved_metrics = metrics;
+        let rtc = Rtc::from_state(&state2, saved_metrics);
+
+        // Check that the restored `Rtc` keeps the state of the old `metrics` object.
+        assert_eq!(rtc.events.invalid_write_count.count(), 1);
     }
 }
