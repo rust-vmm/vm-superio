@@ -1,0 +1,16 @@
+[package]
+name = "vm-superio-ser"
+version = "0.1.0"
+description = "Serialization for legacy device states"
+keywords = ["superio", "serialization", "versioning"]
+repository = "https://github.com/rust-vmm/vm-superio"
+readme = "README.md"
+authors = ["rust-vmm AWS maintainers <rust-vmm-maintainers@amazon.com>"]
+license = "Apache-2.0 OR BSD-3-Clause"
+edition = "2018"
+
+[dependencies]
+serde = { version = ">=1.0.27", features = ["derive"] }
+versionize = ">=0.1.6"
+versionize_derive = ">=0.1.3"
+vm-superio = { path =  "../vm-superio" }
