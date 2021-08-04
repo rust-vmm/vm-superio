@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+## Changed
+
+- Changed `RTC` to `Rtc` and `RTCEvents` to `RtcEvents` as part of the Rust
+  version update to 1.52.1
+  ([#57](https://github.com/rust-vmm/vm-superio/pull/57)).
+
 # v0.3.0
 
 ## Fixed
