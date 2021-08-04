@@ -45,7 +45,7 @@ const AMBA_ID_HIGH: u16 = 0xFFF;
 ///
 /// We're using a trait to avoid constraining the concrete characteristics of the backend in
 /// any way, enabling zero-cost abstractions and use case-specific implementations.
-pub trait RTCEvents {
+pub trait RtcEvents {
     /// The driver attempts to read from an invalid offset.
     fn invalid_read(&self);
 
@@ -53,17 +53,17 @@ pub trait RTCEvents {
     fn invalid_write(&self);
 }
 
-/// Provides a no-op implementation of `RTCEvents` which can be used in situations that
+/// Provides a no-op implementation of `RtcEvents` which can be used in situations that
 /// do not require logging or otherwise doing anything in response to the events defined
-/// as part of `RTCEvents`.
+/// as part of `RtcEvents`.
 pub struct NoEvents;
 
-impl RTCEvents for NoEvents {
+impl RtcEvents for NoEvents {
     fn invalid_read(&self) {}
     fn invalid_write(&self) {}
 }
 
-impl<EV: RTCEvents> RTCEvents for Arc<EV> {
+impl<EV: RtcEvents> RtcEvents for Arc<EV> {
     fn invalid_read(&self) {
         self.as_ref().invalid_read();
     }
@@ -84,10 +84,10 @@ impl<EV: RTCEvents> RTCEvents for Arc<EV> {
 /// # use std::io::Error;
 /// # use std::ops::Deref;
 /// # use std::time::{Instant, Duration, SystemTime, UNIX_EPOCH};
-/// # use vm_superio::RTC;
+/// # use vm_superio::Rtc;
 ///
 /// let mut data = [0; 4];
-/// let mut rtc = RTC::new();
+/// let mut rtc = Rtc::new();
 /// const RTCDR: u16 = 0x0; // Data Register.
 /// const RTCLR: u16 = 0x8; // Load Register.
 ///
@@ -108,7 +108,7 @@ impl<EV: RTCEvents> RTCEvents for Arc<EV> {
 /// rtc.read(RTCDR, &mut data);
 /// assert!(u32::from_le_bytes(data) > v);
 /// ```
-pub struct RTC<EV: RTCEvents> {
+pub struct Rtc<EV: RtcEvents> {
     // The load register.
     lr: u32,
 
@@ -147,34 +147,34 @@ fn get_current_time() -> u32 {
     epoch_time.as_secs() as u32
 }
 
-impl RTC<NoEvents> {
+impl Rtc<NoEvents> {
     /// Creates a new `AMBA PL031 RTC` instance without any metric
     /// capabilities.
     ///
     /// # Example
     ///
     /// You can see an example of how to use this function in the
-    /// [`Example` section from `RTC`](struct.RTC.html#example).
-    pub fn new() -> RTC<NoEvents> {
+    /// [`Example` section from `Rtc`](struct.Rtc.html#example).
+    pub fn new() -> Rtc<NoEvents> {
         Self::with_events(NoEvents)
     }
 }
 
-impl Default for RTC<NoEvents> {
+impl Default for Rtc<NoEvents> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<EV: RTCEvents> RTC<EV> {
+impl<EV: RtcEvents> Rtc<EV> {
     /// Creates a new `AMBA PL031 RTC` instance and invokes the `rtc_events`
-    /// implementation of `RTCEvents` during operation.
+    /// implementation of `RtcEvents` during operation.
     ///
     /// # Arguments
-    /// * `rtc_events` - The `RTCEvents` implementation used to track the occurrence
+    /// * `rtc_events` - The `RtcEvents` implementation used to track the occurrence
     ///                  of failure or missed events in the RTC operation.
     pub fn with_events(rtc_events: EV) -> Self {
-        RTC {
+        Rtc {
             // The load register is initialized to 0.
             lr: 0,
 
@@ -190,7 +190,7 @@ impl<EV: RTCEvents> RTC<EV> {
             // The raw interrupt is initialised as not asserted.
             ris: 0,
 
-            // A struct implementing RTCEvents for tracking the occurrence of
+            // A struct implementing RtcEvents for tracking the occurrence of
             // significant events.
             events: rtc_events,
         }
@@ -223,7 +223,7 @@ impl<EV: RTCEvents> RTC<EV> {
     /// # Example
     ///
     /// You can see an example of how to use this function in the
-    /// [`Example` section from `RTC`](struct.RTC.html#example).
+    /// [`Example` section from `Rtc`](struct.Rtc.html#example).
     pub fn write(&mut self, offset: u16, data: &[u8; 4]) {
         let val = u32::from_le_bytes(*data);
 
@@ -281,7 +281,7 @@ impl<EV: RTCEvents> RTC<EV> {
     /// # Example
     ///
     /// You can see an example of how to use this function in the
-    /// [`Example` section from `RTC`](struct.RTC.html#example).
+    /// [`Example` section from `Rtc`](struct.Rtc.html#example).
     pub fn read(&mut self, offset: u16, data: &mut [u8; 4]) {
         let v = if (AMBA_ID_LOW..=AMBA_ID_HIGH).contains(&offset) {
             let index = ((offset - AMBA_ID_LOW) >> 2) as usize;
@@ -325,12 +325,12 @@ mod tests {
     use vmm_sys_util::metric::Metric;
 
     #[derive(Default)]
-    struct ExampleRTCMetrics {
+    struct ExampleRtcMetrics {
         invalid_read_count: AtomicU64,
         invalid_write_count: AtomicU64,
     }
 
-    impl RTCEvents for ExampleRTCMetrics {
+    impl RtcEvents for ExampleRtcMetrics {
         fn invalid_read(&self) {
             self.invalid_read_count.inc();
             // We can also log a message here, or as part of any of the other methods.
@@ -345,7 +345,7 @@ mod tests {
     fn test_regression_year_1970() {
         // This is a regression test for: https://github.com/rust-vmm/vm-superio/issues/47.
         // The problem is that the time in the guest would show up as in the 1970s.
-        let mut rtc = RTC::new();
+        let mut rtc = Rtc::new();
         let expected_time = get_current_time();
 
         let mut actual_time = [0u8; 4];
@@ -362,8 +362,8 @@ mod tests {
         // and that the Data Register RTC count increments over time.
         // This also tests that the invalid write metric is incremented for
         // writes to RTCDR.
-        let metrics = Arc::new(ExampleRTCMetrics::default());
-        let mut rtc = RTC::with_events(metrics);
+        let metrics = Arc::new(ExampleRtcMetrics::default());
+        let mut rtc = Rtc::with_events(metrics);
         let mut data = [0; 4];
 
         // Check metrics are equal to 0 at the beginning.
@@ -414,7 +414,7 @@ mod tests {
         // Test reading and writing to the match register.
         // TODO: Implement the alarm functionality and confirm an interrupt
         // is raised when the match register is set.
-        let mut rtc = RTC::new();
+        let mut rtc = Rtc::new();
         let mut data: [u8; 4];
 
         // Write to the match register.
@@ -431,8 +431,8 @@ mod tests {
     fn test_load_register() {
         // Read and write to the load register to confirm we can both
         // set the RTC value forward and backward.
-        // This also tests the default RTC constructor.
-        let mut rtc: RTC<NoEvents> = Default::default();
+        // This also tests the default Rtc constructor.
+        let mut rtc: Rtc<NoEvents> = Default::default();
         let mut data = [0; 4];
 
         // Get the RTC value with a load register of 0 (the initial value).
@@ -492,7 +492,7 @@ mod tests {
     #[test]
     fn test_rtc_value_overflow() {
         // Verify that the RTC value will wrap on overflow instead of panic.
-        let mut rtc = RTC::new();
+        let mut rtc = Rtc::new();
         let mut data: [u8; 4];
 
         // Write u32::MAX to the load register
@@ -524,7 +524,7 @@ mod tests {
     #[test]
     fn test_interrupt_mask_set_clear_register() {
         // Test setting and clearing the interrupt mask bit.
-        let mut rtc = RTC::new();
+        let mut rtc = Rtc::new();
         let mut data: [u8; 4];
 
         // Manually set the raw interrupt.
@@ -564,8 +564,8 @@ mod tests {
     fn test_interrupt_clear_register() {
         // Test clearing the interrupt. This also tests
         // that the invalid read and write metrics are incremented.
-        let metrics = Arc::new(ExampleRTCMetrics::default());
-        let mut rtc = RTC::with_events(metrics);
+        let metrics = Arc::new(ExampleRtcMetrics::default());
+        let mut rtc = Rtc::with_events(metrics);
         let mut data = [0; 4];
 
         // Check metrics are equal to 0 at the beginning.
@@ -611,7 +611,7 @@ mod tests {
     fn test_control_register() {
         // Writing 1 to the Control Register should reset the RTC value.
         // Writing 0 should have no effect.
-        let mut rtc = RTC::new();
+        let mut rtc = Rtc::new();
         let mut data: [u8; 4];
 
         // Let's move the guest time in the future.
@@ -659,7 +659,7 @@ mod tests {
     fn test_raw_interrupt_status_register() {
         // Writing to the Raw Interrupt Status Register should have no effect,
         // and reading should return the value of RTCRIS.
-        let mut rtc = RTC::new();
+        let mut rtc = Rtc::new();
         let mut data = [0; 4];
 
         // Set the raw interrupt for testing.
@@ -682,7 +682,7 @@ mod tests {
     fn test_mask_interrupt_status_register() {
         // Writing to the Masked Interrupt Status Register should have no effect,
         // and reading should return the value of RTCRIS & RTCIMSC.
-        let mut rtc = RTC::new();
+        let mut rtc = Rtc::new();
         let mut data = [0; 4];
 
         // Set the raw interrupt for testing.
@@ -718,7 +718,7 @@ mod tests {
 
     #[test]
     fn test_read_only_register_addresses() {
-        let mut rtc = RTC::new();
+        let mut rtc = Rtc::new();
         let mut data = [0; 4];
 
         // Read the current value of AMBA_ID_LOW.
@@ -759,8 +759,8 @@ mod tests {
         // Test that writing to an invalid register offset has no effect
         // on the RTC value (as read from the data register), and confirm
         // the invalid write metric increments.
-        let metrics = Arc::new(ExampleRTCMetrics::default());
-        let mut rtc = RTC::with_events(metrics);
+        let metrics = Arc::new(ExampleRtcMetrics::default());
+        let mut rtc = Rtc::with_events(metrics);
         let mut data = [0; 4];
 
         // Check metrics are equal to 0 at the beginning.
@@ -828,8 +828,8 @@ mod tests {
     fn test_invalid_read_offset() {
         // Test that reading from an invalid register offset has no effect,
         // and confirm the invalid read metric increments.
-        let metrics = Arc::new(ExampleRTCMetrics::default());
-        let mut rtc = RTC::with_events(metrics);
+        let metrics = Arc::new(ExampleRtcMetrics::default());
+        let mut rtc = Rtc::with_events(metrics);
         let mut data: [u8; 4];
 
         // Check metrics are equal to 0 at the beginning.
