@@ -8,3 +8,7 @@
 //! implement the `Serialize`, `Deserialize` and `Versionize` traits as well.
 
 #![deny(missing_docs)]
+
+pub mod rtc_pl031;
+
+pub use rtc_pl031::RtcStateSer;

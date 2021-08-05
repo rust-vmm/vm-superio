@@ -22,7 +22,7 @@ pub mod rtc_pl031;
 pub mod serial;
 
 pub use i8042::I8042Device;
-pub use rtc_pl031::Rtc;
+pub use rtc_pl031::{Rtc, RtcState};
 pub use serial::Serial;
 
 use std::result::Result;
