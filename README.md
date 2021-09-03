@@ -42,6 +42,23 @@ the driver to an `io::Write` object (`out`), which can be, for example,
 A `Trigger` object is the currently used mechanism for notifying the driver
 about in/out events that need to be handled.
 
+## Threat model
+
+Trusted actors:
+* host kernel
+
+Untrusted actors:
+* guest kernel
+* guest drivers
+
+The untrusted actors can change the state of the device through reads and
+writes on the Bus at the address where the device resides.
+
+|#NR	|Threat	|Mitigation	|
+|---	|---	|---	|
+|1 | A malicious guest generates large memory allocations by flooding the serial console input. [CVE-2020-27173](https://nvd.nist.gov/vuln/detail/CVE-2020-27173)	|The serial console limits the number of elements in the FIFO corresponding to the serial console input to `FIFO_SIZE` (=64), returning a FIFO Full error when the limit is reached. This error MUST be handled by the crate customer. When the serial console input is connected to an event loop, the customer MUST ensure that the loop is not flooded with events coming from untrusted sources when no space is available in the FIFO.	|
+|2	|A malicious guest can fill up the host disk by generating a high amount of data to be written to the serial output.	|Mitigation is not possible at the emulation layer because we are not controlling the output (`Writer`). This needs to be mitigated at the VMM level by adding a rate limiting mechanism. We recommend using as output a resource that has a fixed size (e.g. ring buffer or a named pipe).	|
+
 ### Usage
 
 The interaction between the serial console and its driver, at the emulation
@@ -74,23 +91,22 @@ Note that because the Match Register is the only possible source of an event,
 and the Match Register is not currently implemented, no event handling
 is required.
 
-## Threat model
+### Threat model
 
 Trusted actors:
-- host kernel.
+* host kernel
 
 Untrusted actors:
-- guest kernel,
-- guest drivers.
+* guest kernel
+* guest drivers
 
-For the serial console, there is no monitoring of the amount of data that is
-written to the `out` object.
+The untrusted actors can change the state of the device through reads and
+writes on the Bus at the address where the device resides.
 
-*Threat*: A malicious guest can fill up the host disk by generating a high
-amount of data to be written to the serial output.  
-*Mitigation*: There is no mitigation implemented at the serial console emulation
-level. To mitigate this at the VMM level, it is recommended to use as output a
-resource that has a fixed size (e.g. ring buffer or a named pipe).
+|#NR	|Threat	|Mitigation	|
+|---	|---	|---	|
+|1	|A malicious guest writes invalid values in the Load Register to cause overflows on subsequent reads of the Data Register.	|The arithmetic operations in the RTC are checked for overflows. When such a situation occurs, the state of the device is reset.	|
+|2	|A malicious guest performs reads and writes from invalid offsets (that do not correspond to the RTC registers) to cause crashes or to get access to data.	|Reads and writes of invalid offsets are denied by the emulation, and an `invalid_read/write` event is called. These events can be implemented by VMMs, and extend them to generate alarms (and for example stop the execution of the malicious guest).	|
 
 ## License
 
