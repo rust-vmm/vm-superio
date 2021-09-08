@@ -117,6 +117,9 @@ pub trait SerialEvents {
     fn out_byte(&self);
     /// An error occurred while writing a byte to serial output resulting in a lost byte.
     fn tx_lost_byte(&self);
+    /// This event can be used by the consumer to re-enable events coming from
+    /// the serial input.
+    fn in_buffer_empty(&self);
 }
 
 /// Provides a no-op implementation of `SerialEvents` which can be used in situations that
@@ -128,6 +131,7 @@ impl SerialEvents for NoEvents {
     fn buffer_read(&self) {}
     fn out_byte(&self) {}
     fn tx_lost_byte(&self) {}
+    fn in_buffer_empty(&self) {}
 }
 
 impl<EV: SerialEvents> SerialEvents for Arc<EV> {
@@ -141,6 +145,10 @@ impl<EV: SerialEvents> SerialEvents for Arc<EV> {
 
     fn tx_lost_byte(&self) {
         self.as_ref().tx_lost_byte();
+    }
+
+    fn in_buffer_empty(&self) {
+        self.as_ref().in_buffer_empty();
     }
 }
 
@@ -450,12 +458,13 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
                 // interrupt identification register and RDA bit when no
                 // more data is available).
                 self.del_interrupt(IIR_RDA_BIT);
-                if self.in_buffer.len() <= 1 {
+                let byte = self.in_buffer.pop_front().unwrap_or_default();
+                if self.in_buffer.is_empty() {
                     self.clear_lsr_rda_bit();
+                    self.events.in_buffer_empty();
                 }
-
                 self.events.buffer_read();
-                self.in_buffer.pop_front().unwrap_or_default()
+                byte
             }
             IER_OFFSET => self.interrupt_enable,
             IIR_OFFSET => {
@@ -566,14 +575,25 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
-    struct ExampleSerialMetrics {
+    struct ExampleSerialEvents {
         read_count: AtomicU64,
         out_byte_count: AtomicU64,
         tx_lost_byte_count: AtomicU64,
+        buffer_ready_event: EventFd,
     }
 
-    impl SerialEvents for ExampleSerialMetrics {
+    impl ExampleSerialEvents {
+        fn new() -> Self {
+            ExampleSerialEvents {
+                read_count: AtomicU64::new(0),
+                out_byte_count: AtomicU64::new(0),
+                tx_lost_byte_count: AtomicU64::new(0),
+                buffer_ready_event: EventFd::new(libc::EFD_NONBLOCK).unwrap(),
+            }
+        }
+    }
+
+    impl SerialEvents for ExampleSerialEvents {
         fn buffer_read(&self) {
             self.read_count.inc();
             // We can also log a message here, or as part of any of the other methods.
@@ -585,6 +605,10 @@ mod tests {
 
         fn tx_lost_byte(&self) {
             self.tx_lost_byte_count.inc();
+        }
+
+        fn in_buffer_empty(&self) {
+            self.buffer_ready_event.write(1).unwrap();
         }
     }
 
@@ -812,9 +836,17 @@ mod tests {
     #[test]
     fn test_serial_events() {
         let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
-        let metrics = Arc::new(ExampleSerialMetrics::default());
+
+        let events_ = Arc::new(ExampleSerialEvents::new());
         let mut oneslot_buf = [0u8; 1];
-        let mut serial = Serial::with_events(intr_evt, metrics, oneslot_buf.as_mut());
+        let mut serial = Serial::with_events(intr_evt, events_, oneslot_buf.as_mut());
+
+        // This should be an error because buffer_ready_event has not been
+        // triggered yet so no one should have written to that fd yet.
+        assert_eq!(
+            serial.events.buffer_ready_event.read().unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
 
         // Check everything is equal to 0 at the beginning.
         assert_eq!(serial.events.read_count.count(), 0);
@@ -822,8 +854,11 @@ mod tests {
         assert_eq!(serial.events.tx_lost_byte_count.count(), 0);
 
         // This DATA read should cause the `SerialEvents::buffer_read` method to be invoked.
+        // And since the in_buffer is empty the buffer_ready_event should have
+        // been triggered, hence we can read from that fd.
         serial.read(DATA_OFFSET);
         assert_eq!(serial.events.read_count.count(), 1);
+        assert_eq!(serial.events.buffer_ready_event.read().unwrap(), 1);
 
         // This DATA write should cause `SerialEvents::out_byte` to be called.
         serial.write(DATA_OFFSET, 1).unwrap();
@@ -840,6 +875,22 @@ mod tests {
         assert_eq!(serial.events.read_count.count(), 1);
         assert_eq!(serial.events.out_byte_count.count(), 1);
         assert_eq!(serial.events.tx_lost_byte_count.count(), 1);
+
+        // This DATA read should cause the `SerialEvents::buffer_read` method to be invoked.
+        // And since it was the last byte from in buffer the `SerialEvents::in_buffer_empty`
+        // was also invoked.
+        serial.read(DATA_OFFSET);
+        assert_eq!(serial.events.read_count.count(), 2);
+        assert_eq!(serial.events.buffer_ready_event.read().unwrap(), 1);
+        let _res = serial.enqueue_raw_bytes(&[1, 2]);
+        serial.read(DATA_OFFSET);
+        // Since there is still one byte in the in_buffer, buffer_ready_events
+        // should have not been triggered so we shouldn't have anything to read
+        // from that fd.
+        assert_eq!(
+            serial.events.buffer_ready_event.read().unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
     }
 
     #[test]
