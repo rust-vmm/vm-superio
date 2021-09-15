@@ -1,12 +1,24 @@
 # vm-superio
 
 
-The `vm-superio` crate provides emulation for legacy devices. For now, it offers
-this support only for the
+`vm-superio` provides emulation for legacy devices. For now, it offers this
+support only for the
 [Linux serial console](https://en.wikipedia.org/wiki/Linux_console), a minimal
 [i8042 PS/2 Controller](https://wiki.osdev.org/%228042%22_PS/2_Controller) and
 an
 [ARM PL031 Real Time Clock](https://developer.arm.com/documentation/ddi0224/c/Programmers-model).
+To enable snapshot use cases, such as live migration, it also provides support
+for saving and restoring the state, and for persisting it (for now only for the
+Rtc device).
+In order to achieve this, and to keep a clear separation of concerns,
+`vm-superio` is a
+[workspace](https://doc.rust-lang.org/book/ch14-03-cargo-workspaces.html),
+containing the following crates:
+- `vm-superio` - which keeps the state of the component;
+- `vm-superio-ser` - which mirrors the state structure from `vm-superio` and
+   adds the required version constraints on it, and derives/implements the
+  required (de)serialization traits (i.e. `serde`'s `Serialize` and
+  `Deserialize`; `Versionize`).
 
 ## Serial Console
 
@@ -27,8 +39,8 @@ covered in this crate, the VMM needs to do the following operations:
 - event handling (optional)
 
 The following UART registers are emulated via the
-[`Serial` structure](src/serial.rs): DLL, IER, DLH, IIR, LCR, LSR, MCR, MSR and
-SR (a brief, but nice presentation about these,
+[`Serial` structure](crates/vm-superio/src/serial.rs): DLL, IER, DLH, IIR, LCR,
+LSR, MCR, MSR and SR (a brief, but nice presentation about these,
 [here](https://www.lammertbies.nl/comm/info/serial-uart#regs)).
 The Fifo Control Register (FCR) is not emulated; there is no support yet for
 directly controlling the FIFOs (which, in this implementation, are always
@@ -107,6 +119,30 @@ writes on the Bus at the address where the device resides.
 |---	|---	|---	|
 |1	|A malicious guest writes invalid values in the Load Register to cause overflows on subsequent reads of the Data Register.	|The arithmetic operations in the RTC are checked for overflows. When such a situation occurs, the state of the device is reset.	|
 |2	|A malicious guest performs reads and writes from invalid offsets (that do not correspond to the RTC registers) to cause crashes or to get access to data.	|Reads and writes of invalid offsets are denied by the emulation, and an `invalid_read/write` event is called. These events can be implemented by VMMs, and extend them to generate alarms (and for example stop the execution of the malicious guest).	|
+
+## Save/restore state support
+
+This support is offered for now only for the `Rtc` device, by the following
+abstractions:
+- `RtcState` -> which keeps the hardware state of the `Rtc`;
+- `RtcStateSer` -> which can be used by customers who need an `RtcState` that
+  is also `(De)Serialize` and/or `Versionize`. If the customers want a
+  different state than the upstream one, then they can implement `From` (or
+  similar mechanisms) in their products to convert the upstream state to the
+  desired product state.
+
+A detailed design document for the save/restore state support in rust-vmm can
+be found [here](https://github.com/rust-vmm/community/pull/118/files).
+
+### Compatibility between `vm-superio` and `vm-superio-ser` versions
+
+Each time there's a change in a state from `vm-superio`, that change needs to
+be propagated in the corresponding state from `vm-superio-ser`. To keep the
+compatibility between the release versions of these two crates, once we have a
+new release of `vm-superio` that implied a change in `vm-superio-ser`, we need
+to have a new release of `vm-superio-ser` as well.
+Therefore, the `vm-superio-ser` crate has an exact version of `vm-superio` as
+dependency.
 
 ## License
 
