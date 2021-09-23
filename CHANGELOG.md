@@ -1,6 +1,11 @@
 # Changelog
 
-## [Unreleased]
+# v0.4.0
+
+## Added
+
+- Added `in_buffer_empty` to SerialEvents trait. This helps with handling
+  the registration of I/O events related to the serial input.
 
 ## Changed
 
