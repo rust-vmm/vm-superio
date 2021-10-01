@@ -247,11 +247,15 @@ impl<EV: RtcEvents> Rtc<EV> {
         // The RTC value is the time + offset as per:
         // https://developer.arm.com/documentation/ddi0224/c/Functional-overview/RTC-functional-description/Update-block
         //
-        // The addition cannot fail because the current time can be maximum u32,
-        // and the offset is always < u32::MAX. The addition is thus < u32::MAX * 2,
-        // which fits in an i64.
-        // In the unlikely case of the value not fitting in an u32, we just reset the time to 0.
-        u32::try_from((get_current_time() as i64) + self.offset).unwrap_or(0)
+        // In the unlikely case of the value not fitting in an u32, we just set the time to
+        // the current time on the host.
+        let current_host_time = get_current_time();
+        u32::try_from(
+            (current_host_time as i64)
+                .checked_add(self.offset)
+                .unwrap_or(current_host_time as i64),
+        )
+        .unwrap_or(current_host_time)
     }
 
     /// Handles a write request from the driver at `offset` offset from the
@@ -955,5 +959,20 @@ mod tests {
 
         // Check that the restored `Rtc` keeps the state of the old `metrics` object.
         assert_eq!(rtc.events.invalid_write_count.count(), 1);
+    }
+
+    #[test]
+    fn test_overflow_offset() {
+        // Test that an invalid offset (too big) does not cause an overflow.
+        let rtc_state = RtcState {
+            lr: 65535,
+            offset: 9223372036854710636,
+            mr: 0,
+            imsc: 0,
+            ris: 0,
+        };
+        let mut rtc = Rtc::from_state(&rtc_state, NoEvents);
+        let mut data = [0u8; 4];
+        rtc.read(RTCDR, &mut data);
     }
 }
