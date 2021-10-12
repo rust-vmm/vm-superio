@@ -6,7 +6,7 @@
 //! This module implements a PL031 Real Time Clock (RTC) that provides a long
 //! time base counter. This is achieved by generating an interrupt signal after
 //! counting for a programmed number of cycles of a real-time clock input.
-//!
+
 use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -92,7 +92,10 @@ impl<EV: RtcEvents> RtcEvents for Arc<EV> {
 /// const RTCLR: u16 = 0x8; // Load Register.
 ///
 /// // Write system time since UNIX_EPOCH in seconds to the load register.
-/// let v = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u32;
+/// let v = SystemTime::now()
+///     .duration_since(UNIX_EPOCH)
+///     .unwrap()
+///     .as_secs() as u32;
 /// data = v.to_le_bytes();
 /// rtc.write(RTCLR, &data);
 ///
