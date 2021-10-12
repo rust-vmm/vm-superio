@@ -1,11 +1,25 @@
 # Changelog
 
+# v0.5.0
+
+## Added
+
+- Added `RtcState`, and support for saving and restoring the state of the `Rtc`
+  device. This support is useful for snapshot use cases, such as live
+  migration ([#65](https://github.com/rust-vmm/vm-superio/pull/65)).
+
+## Fixed
+
+- Fixed potential overflow in the `Rtc` implementation caused by an invalid
+  offset ([#65](https://github.com/rust-vmm/vm-superio/pull/65)).
+
 # v0.4.0
 
 ## Added
 
 - Added `in_buffer_empty` to SerialEvents trait. This helps with handling
-  the registration of I/O events related to the serial input.
+  the registration of I/O events related to the serial input
+  ([#63](https://github.com/rust-vmm/vm-superio/pull/63)).
 
 ## Changed
 
@@ -58,6 +72,6 @@
 
 # v0.1.0
 
-This is the first vm-superio release.
+This is the first `vm-superio` release.
 The `vm-superio` crate provides emulation for legacy devices. For now, it offers
 this support only for the Linux serial console.
