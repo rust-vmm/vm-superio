@@ -10,5 +10,7 @@
 #![deny(missing_docs)]
 
 pub mod rtc_pl031;
+pub mod serial;
 
 pub use rtc_pl031::RtcStateSer;
+pub use serial::SerialStateSer;
