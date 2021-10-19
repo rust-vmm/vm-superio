@@ -152,6 +152,48 @@ impl<EV: SerialEvents> SerialEvents for Arc<EV> {
     }
 }
 
+/// The state of the Serial device.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SerialState {
+    /// Divisor Latch Low Byte
+    pub baud_divisor_low: u8,
+    /// Divisor Latch High Byte
+    pub baud_divisor_high: u8,
+    /// Interrupt Enable Register
+    pub interrupt_enable: u8,
+    /// Interrupt Identification Register
+    pub interrupt_identification: u8,
+    /// Line Control Register
+    pub line_control: u8,
+    /// Line Status Register
+    pub line_status: u8,
+    /// Modem Control Register
+    pub modem_control: u8,
+    /// Modem Status Register
+    pub modem_status: u8,
+    /// Scratch Register
+    pub scratch: u8,
+    /// Transmitter Holding Buffer/Receiver Buffer
+    pub in_buffer: Vec<u8>,
+}
+
+impl Default for SerialState {
+    fn default() -> Self {
+        SerialState {
+            baud_divisor_low: DEFAULT_BAUD_DIVISOR_LOW,
+            baud_divisor_high: DEFAULT_BAUD_DIVISOR_HIGH,
+            interrupt_enable: DEFAULT_INTERRUPT_ENABLE,
+            interrupt_identification: DEFAULT_INTERRUPT_IDENTIFICATION,
+            line_control: DEFAULT_LINE_CONTROL,
+            line_status: DEFAULT_LINE_STATUS,
+            modem_control: DEFAULT_MODEM_CONTROL,
+            modem_status: DEFAULT_MODEM_STATUS,
+            scratch: DEFAULT_SCRATCH,
+            in_buffer: Vec::new(),
+        }
+    }
+}
+
 /// The serial console emulation is done by emulating a serial COM port.
 ///
 /// Each serial COM port (COM1-4) has an associated Port I/O address base and
@@ -268,7 +310,42 @@ impl<T: Trigger, W: Write> Serial<T, NoEvents, W> {
 }
 
 impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
-    /// Creates a new `Serial` instance which writes the guest's output to
+    /// Creates a new `Serial` instance from a given `state`, which writes the guest's output to
+    /// `out`, uses `trigger` object to notify the driver about new
+    /// events, and invokes the `serial_evts` implementation of `SerialEvents`
+    /// during operation.
+    /// For creating the instance from a default state, [`with_events`](#method.with_events) method
+    /// can be used.
+    ///
+    /// # Arguments
+    /// * `state` - A reference to the state from which the `Serial` is constructed.
+    /// * `trigger` - The `Trigger` object that will be used to notify the driver
+    ///               about events.
+    /// * `serial_evts` - The `SerialEvents` implementation used to track the occurrence
+    ///                   of significant events in the serial operation logic.
+    /// * `out` - An object for writing guest's output to. In case the output
+    ///           is not of interest,
+    ///           [std::io::Sink](https://doc.rust-lang.org/std/io/struct.Sink.html)
+    ///           can be used here.
+    pub fn from_state(state: &SerialState, trigger: T, serial_evts: EV, out: W) -> Self {
+        Serial {
+            baud_divisor_low: state.baud_divisor_low,
+            baud_divisor_high: state.baud_divisor_high,
+            interrupt_enable: state.interrupt_enable,
+            interrupt_identification: state.interrupt_identification,
+            line_control: state.line_control,
+            line_status: state.line_status,
+            modem_control: state.modem_control,
+            modem_status: state.modem_status,
+            scratch: state.scratch,
+            in_buffer: VecDeque::from(state.in_buffer.clone()),
+            interrupt_evt: trigger,
+            events: serial_evts,
+            out,
+        }
+    }
+
+    /// Creates a new `Serial` instance from the default state, which writes the guest's output to
     /// `out`, uses `trigger` object to notify the driver about new
     /// events, and invokes the `serial_evts` implementation of `SerialEvents`
     /// during operation.
@@ -283,20 +360,22 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
     ///           [std::io::Sink](https://doc.rust-lang.org/std/io/struct.Sink.html)
     ///           can be used here.
     pub fn with_events(trigger: T, serial_evts: EV, out: W) -> Self {
-        Serial {
-            baud_divisor_low: DEFAULT_BAUD_DIVISOR_LOW,
-            baud_divisor_high: DEFAULT_BAUD_DIVISOR_HIGH,
-            interrupt_enable: DEFAULT_INTERRUPT_ENABLE,
-            interrupt_identification: DEFAULT_INTERRUPT_IDENTIFICATION,
-            line_control: DEFAULT_LINE_CONTROL,
-            line_status: DEFAULT_LINE_STATUS,
-            modem_control: DEFAULT_MODEM_CONTROL,
-            modem_status: DEFAULT_MODEM_STATUS,
-            scratch: DEFAULT_SCRATCH,
-            in_buffer: VecDeque::new(),
-            interrupt_evt: trigger,
-            events: serial_evts,
-            out,
+        Self::from_state(&SerialState::default(), trigger, serial_evts, out)
+    }
+
+    /// Returns the state of the Serial.
+    pub fn state(&self) -> SerialState {
+        SerialState {
+            baud_divisor_low: self.baud_divisor_low,
+            baud_divisor_high: self.baud_divisor_high,
+            interrupt_enable: self.interrupt_enable,
+            interrupt_identification: self.interrupt_identification,
+            line_control: self.line_control,
+            line_status: self.line_status,
+            modem_control: self.modem_control,
+            modem_status: self.modem_status,
+            scratch: self.scratch,
+            in_buffer: Vec::from(self.in_buffer.clone()),
         }
     }
 
@@ -913,5 +992,13 @@ mod tests {
         );
         // THR empty interrupt was raised nevertheless.
         assert_eq!(iir & IIR_THR_EMPTY_BIT, IIR_THR_EMPTY_BIT);
+    }
+
+    #[test]
+    fn test_serial_state_default() {
+        let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
+        let serial = Serial::new(intr_evt, Vec::new());
+
+        assert_eq!(serial.state(), SerialState::default());
     }
 }
