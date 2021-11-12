@@ -327,8 +327,17 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
     ///           is not of interest,
     ///           [std::io::Sink](https://doc.rust-lang.org/std/io/struct.Sink.html)
     ///           can be used here.
-    pub fn from_state(state: &SerialState, trigger: T, serial_evts: EV, out: W) -> Self {
-        Serial {
+    pub fn from_state(
+        state: &SerialState,
+        trigger: T,
+        serial_evts: EV,
+        out: W,
+    ) -> Result<Self, Error<T::E>> {
+        if state.in_buffer.len() > FIFO_SIZE {
+            return Err(Error::FullFifo);
+        }
+
+        Ok(Serial {
             baud_divisor_low: state.baud_divisor_low,
             baud_divisor_high: state.baud_divisor_high,
             interrupt_enable: state.interrupt_enable,
@@ -342,7 +351,7 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
             interrupt_evt: trigger,
             events: serial_evts,
             out,
-        }
+        })
     }
 
     /// Creates a new `Serial` instance from the default state, which writes the guest's output to
@@ -360,7 +369,9 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
     ///           [std::io::Sink](https://doc.rust-lang.org/std/io/struct.Sink.html)
     ///           can be used here.
     pub fn with_events(trigger: T, serial_evts: EV, out: W) -> Self {
-        Self::from_state(&SerialState::default(), trigger, serial_evts, out)
+        // Safe because we are using the default state that has an appropriately size input buffer
+        // and there are no pending interrupts to be triggered.
+        Self::from_state(&SerialState::default(), trigger, serial_evts, out).unwrap()
     }
 
     /// Returns the state of the Serial.
@@ -1000,5 +1011,18 @@ mod tests {
         let serial = Serial::new(intr_evt, Vec::new());
 
         assert_eq!(serial.state(), SerialState::default());
+    }
+
+    #[test]
+    fn test_from_state_with_too_many_bytes() {
+        let mut state = SerialState::default();
+        let too_many_bytes = vec![1u8; 128];
+
+        state.in_buffer.extend(too_many_bytes);
+
+        let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
+        let serial = Serial::from_state(&state,intr_evt, NoEvents, sink());
+
+        assert!(matches!(serial, Err(Error::FullFifo)));
     }
 }
