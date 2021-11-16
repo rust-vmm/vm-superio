@@ -337,7 +337,7 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
             return Err(Error::FullFifo);
         }
 
-        Ok(Serial {
+        let mut serial = Serial {
             baud_divisor_low: state.baud_divisor_low,
             baud_divisor_high: state.baud_divisor_high,
             interrupt_enable: state.interrupt_enable,
@@ -351,7 +351,16 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
             interrupt_evt: trigger,
             events: serial_evts,
             out,
-        })
+        };
+
+        if serial.is_thr_interrupt_enabled() && serial.is_thr_interrupt_set() {
+            serial.trigger_interrupt().map_err(Error::Trigger)?;
+        }
+        if serial.is_rda_interrupt_enabled() && serial.is_rda_interrupt_set() {
+            serial.trigger_interrupt().map_err(Error::Trigger)?;
+        }
+
+        Ok(serial)
     }
 
     /// Creates a new `Serial` instance from the default state, which writes the guest's output to
@@ -410,6 +419,14 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
 
     fn is_thr_interrupt_enabled(&self) -> bool {
         (self.interrupt_enable & IER_THR_EMPTY_BIT) != 0
+    }
+
+    fn is_rda_interrupt_set(&self) -> bool {
+        (self.interrupt_identification & IIR_RDA_BIT) != 0
+    }
+
+    fn is_thr_interrupt_set(&self) -> bool {
+        (self.interrupt_identification & IIR_THR_EMPTY_BIT) != 0
     }
 
     fn is_in_loop_mode(&self) -> bool {
@@ -1024,5 +1041,49 @@ mod tests {
         let serial = Serial::from_state(&state,intr_evt, NoEvents, sink());
 
         assert!(matches!(serial, Err(Error::FullFifo)));
+    }
+
+    #[test]
+    fn test_from_state_with_pending_thre_interrupt() {
+        let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
+        let mut serial = Serial::new(intr_evt.try_clone().unwrap(), sink());
+
+        serial.write(IER_OFFSET, IER_THR_EMPTY_BIT).unwrap();
+        serial.write(DATA_OFFSET, b'a').unwrap();
+        assert_eq!(intr_evt.read().unwrap(), 1);
+
+        let state = serial.state();
+        let mut serial_after_restore =
+            Serial::from_state(&state, intr_evt.try_clone().unwrap(), NoEvents, sink()).unwrap();
+
+        let ier = serial_after_restore.read(IER_OFFSET);
+        assert_eq!(ier & IER_UART_VALID_BITS, IER_THR_EMPTY_BIT);
+        let iir = serial_after_restore.read(IIR_OFFSET);
+        assert_ne!(iir & IIR_THR_EMPTY_BIT, 0);
+
+        // Verify the serial raised an interrupt again.
+        assert_eq!(intr_evt.read().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_from_state_with_pending_rda_interrupt() {
+        let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
+        let mut serial = Serial::new(intr_evt.try_clone().unwrap(), sink());
+
+        serial.write(IER_OFFSET, IER_RDA_BIT).unwrap();
+        serial.enqueue_raw_bytes(&RAW_INPUT_BUF).unwrap();
+        assert_eq!(intr_evt.read().unwrap(), 1);
+
+        let state = serial.state();
+        let mut serial_after_restore =
+            Serial::from_state(&state, intr_evt.try_clone().unwrap(), NoEvents, sink()).unwrap();
+
+        let ier = serial_after_restore.read(IER_OFFSET);
+        assert_eq!(ier & IER_UART_VALID_BITS, IER_RDA_BIT);
+        let iir = serial_after_restore.read(IIR_OFFSET);
+        assert_ne!(iir & IIR_RDA_BIT, 0);
+
+        // Verify the serial raised an interrupt again.
+        assert_eq!(intr_evt.read().unwrap(), 1);
     }
 }
