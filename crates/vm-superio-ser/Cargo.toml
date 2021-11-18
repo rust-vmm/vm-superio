@@ -24,3 +24,4 @@ vm-superio = { version = "=0.5.0", path = "../vm-superio" }
 [dev-dependencies]
 libc = ">=0.2.39"
 vmm-sys-util = ">=0.7.0"
+bincode = ">=1.3"
