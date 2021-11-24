@@ -46,7 +46,7 @@ use std::result::Result;
 /// [here](https://doc.rust-lang.org/book/ch19-03-advanced-traits.html#using-the-newtype-pattern-to-implement-external-traits-on-external-types).
 pub trait Trigger {
     /// Underlying type for the potential error conditions returned by `Self::trigger`.
-    type E : std::fmt::Debug;
+    type E: std::fmt::Debug;
 
     /// Trigger an event.
     fn trigger(&self) -> Result<(), Self::E>;
