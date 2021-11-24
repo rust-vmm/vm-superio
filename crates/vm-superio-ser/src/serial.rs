@@ -148,7 +148,8 @@ mod tests {
 
         let state_after_restore = SerialState::from(&ser_state);
         let mut serial_after_restore =
-            Serial::from_state(&state_after_restore, intr_evt.try_clone(), NoEvents, sink()).unwrap();
+            Serial::from_state(&state_after_restore, intr_evt.try_clone(), NoEvents, sink())
+                .unwrap();
 
         RAW_INPUT_BUF.iter().for_each(|&c| {
             assert_eq!(serial_after_restore.read(0), c);

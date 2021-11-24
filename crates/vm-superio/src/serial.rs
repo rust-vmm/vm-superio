@@ -1038,7 +1038,7 @@ mod tests {
         state.in_buffer.extend(too_many_bytes);
 
         let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
-        let serial = Serial::from_state(&state,intr_evt, NoEvents, sink());
+        let serial = Serial::from_state(&state, intr_evt, NoEvents, sink());
 
         assert!(matches!(serial, Err(Error::FullFifo)));
     }
