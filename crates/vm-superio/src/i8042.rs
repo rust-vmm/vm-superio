@@ -63,6 +63,7 @@ const CMD_RESET_CPU: u8 = 0xFE;
 /// assert_eq!(i8042.read(0), 0);
 /// i8042.write(4, 0xFE).unwrap();
 /// ```
+#[derive(Debug)]
 pub struct I8042Device<T: Trigger> {
     /// CPU reset event object. We will trigger this event when the guest issues
     /// the reset CPU command.

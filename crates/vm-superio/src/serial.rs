@@ -125,6 +125,7 @@ pub trait SerialEvents {
 /// Provides a no-op implementation of `SerialEvents` which can be used in situations that
 /// do not require logging or otherwise doing anything in response to the events defined
 /// as part of `SerialEvents`.
+#[derive(Debug)]
 pub struct NoEvents;
 
 impl SerialEvents for NoEvents {
@@ -254,6 +255,7 @@ impl Default for SerialState {
 ///     serial.enqueue_raw_bytes(input).unwrap();
 /// }
 /// ```
+#[derive(Debug)]
 pub struct Serial<T: Trigger, EV: SerialEvents, W: Write> {
     // Some UART registers.
     baud_divisor_low: u8,
