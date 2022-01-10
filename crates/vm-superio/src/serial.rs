@@ -649,15 +649,19 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
     pub fn enqueue_raw_bytes(&mut self, input: &[u8]) -> Result<usize, Error<T::E>> {
         let mut write_count = 0;
         if !self.is_in_loop_mode() {
+            // First check if the input slice and the fifo are non-empty so we can return early in
+            // those cases. Any subsequent `write` to the `in_buffer` will write at least one byte.
+            if input.is_empty() {
+                return Ok(0);
+            }
             if self.fifo_capacity() == 0 {
                 return Err(Error::FullFifo);
             }
+
             write_count = std::cmp::min(self.fifo_capacity(), input.len());
-            if write_count > 0 {
-                self.in_buffer.extend(&input[0..write_count]);
-                self.set_lsr_rda_bit();
-                self.received_data_interrupt().map_err(Error::Trigger)?;
-            }
+            self.in_buffer.extend(&input[0..write_count]);
+            self.set_lsr_rda_bit();
+            self.received_data_interrupt().map_err(Error::Trigger)?;
         }
         Ok(write_count)
     }
@@ -739,13 +743,25 @@ mod tests {
         let mut serial = Serial::new(intr_evt.try_clone().unwrap(), sink());
 
         serial.write(IER_OFFSET, IER_RDA_BIT).unwrap();
+
+        serial.enqueue_raw_bytes(&[]).unwrap();
+        // When enqueuing 0 bytes, the serial should neither raise an interrupt,
+        // nor set the `DATA_READY` bit.
+        assert_eq!(
+            intr_evt.read().unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        let mut lsr = serial.read(LSR_OFFSET);
+        assert_eq!(lsr & LSR_DATA_READY_BIT, 0);
+
+        // Enqueue a non-empty slice.
         serial.enqueue_raw_bytes(&RAW_INPUT_BUF).unwrap();
 
         // Verify the serial raised an interrupt.
         assert_eq!(intr_evt.read().unwrap(), 1);
 
         // `DATA_READY` bit should've been set by `enqueue_raw_bytes()`.
-        let mut lsr = serial.read(LSR_OFFSET);
+        lsr = serial.read(LSR_OFFSET);
         assert_ne!(lsr & LSR_DATA_READY_BIT, 0);
 
         // Verify reading the previously pushed buffer.
@@ -926,8 +942,14 @@ mod tests {
         assert_eq!(written_bytes, FIFO_SIZE);
         assert_eq!(serial.in_buffer.len(), FIFO_SIZE);
 
-        // A subsequent call to `enqueue_raw_bytes` fails because the fifo is
-        // now full.
+        // A subsequent call to `enqueue_raw_bytes` with an empty slice should not fail,
+        // even though the fifo is now full.
+        let written_bytes = serial.enqueue_raw_bytes(&[]).unwrap();
+        assert_eq!(written_bytes, 0);
+        assert_eq!(serial.in_buffer.len(), FIFO_SIZE);
+
+        // A subsequent call to `enqueue_raw_bytes` with a non-empty slice fails because
+        // the fifo is now full.
         let one_byte_input = [1u8];
         match serial.enqueue_raw_bytes(&one_byte_input) {
             Err(Error::FullFifo) => (),
