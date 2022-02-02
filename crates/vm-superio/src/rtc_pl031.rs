@@ -172,6 +172,7 @@ impl Default for Rtc<NoEvents> {
 }
 
 // This is the state from which a fresh Rtc can be created.
+#[allow(clippy::derivable_impls)]
 impl Default for RtcState {
     fn default() -> Self {
         RtcState {
