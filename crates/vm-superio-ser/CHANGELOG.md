@@ -1,5 +1,12 @@
 # Changelog
 
+# v0.2.0
+
+## Added
+
+- Added support for a `(De)Serialize` and `Versionize` serial state object,
+  `SerialStateSer`([#73](https://github.com/rust-vmm/vm-superio/pull/73)).
+
 # v0.1.0
 
 This is the first `vm-superio-ser` release.
