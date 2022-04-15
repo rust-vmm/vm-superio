@@ -56,6 +56,7 @@ pub trait RtcEvents {
 /// Provides a no-op implementation of `RtcEvents` which can be used in situations that
 /// do not require logging or otherwise doing anything in response to the events defined
 /// as part of `RtcEvents`.
+#[derive(Debug)]
 pub struct NoEvents;
 
 impl RtcEvents for NoEvents {
@@ -111,6 +112,7 @@ impl<EV: RtcEvents> RtcEvents for Arc<EV> {
 /// rtc.read(RTCDR, &mut data);
 /// assert!(u32::from_le_bytes(data) > v);
 /// ```
+#[derive(Debug)]
 pub struct Rtc<EV: RtcEvents> {
     // The load register.
     lr: u32,
