@@ -8,8 +8,7 @@ support only for the
 an
 [ARM PL031 Real Time Clock](https://developer.arm.com/documentation/ddi0224/c/Programmers-model).
 To enable snapshot use cases, such as live migration, it also provides support
-for saving and restoring the state, and for persisting it (for now only for the
-Rtc device).
+for saving and restoring the state, and for persisting it.
 In order to achieve this, and to keep a clear separation of concerns,
 `vm-superio` is a
 [workspace](https://doc.rust-lang.org/book/ch14-03-cargo-workspaces.html),
@@ -122,14 +121,14 @@ writes on the Bus at the address where the device resides.
 
 ## Save/restore state support
 
-This support is offered for now only for the `Rtc` device, by the following
+This support is offered for the `Rtc` and the `Serial` devices by the following
 abstractions:
-- `RtcState` -> which keeps the hardware state of the `Rtc`;
-- `RtcStateSer` -> which can be used by customers who need an `RtcState` that
-  is also `(De)Serialize` and/or `Versionize`. If the customers want a
-  different state than the upstream one, then they can implement `From` (or
-  similar mechanisms) in their products to convert the upstream state to the
-  desired product state.
+- `<Device>State` -> which keeps the hardware state of the `<Device>`;
+- `<Device>StateSer` -> which can be used by customers who need a
+  `<Device>State` that is also `(De)Serialize` and/or `Versionize`. If the
+  customers want a different state than the upstream one, then they can
+  implement `From` (or similar mechanisms) in their products to convert the
+  upstream state to the desired product state.
 
 A detailed design document for the save/restore state support in rust-vmm can
 be found [here](https://github.com/rust-vmm/community/pull/118/files).
