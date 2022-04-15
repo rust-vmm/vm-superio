@@ -1,5 +1,19 @@
 # Changelog
 
+# v0.6.0
+
+## Added
+
+- Added `SerialState`, and support for saving and restoring the state of the
+  `Serial` device ([#73](https://github.com/rust-vmm/vm-superio/pull/73)).
+- Added the `Debug` derive to the exported structures
+  ([#75](https://github.com/rust-vmm/vm-superio/pull/75)).
+
+## Fixed
+
+- Fixed `enqueue_raw_bytes` for the corner case when 0 bytes were sent, and the
+  fifo was full ([#77](https://github.com/rust-vmm/vm-superio/pull/77)).
+
 # v0.5.0
 
 ## Added
