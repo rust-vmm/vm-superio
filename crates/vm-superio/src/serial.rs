@@ -154,7 +154,7 @@ impl<EV: SerialEvents> SerialEvents for Arc<EV> {
 }
 
 /// The state of the Serial device.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SerialState {
     /// Divisor Latch Low Byte
     pub baud_divisor_low: u8,
