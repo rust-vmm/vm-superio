@@ -14,7 +14,7 @@ use versionize_derive::Versionize;
 use vm_superio::RtcState;
 
 /// Wrapper over an `RtcState` that has serialization capabilities.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Versionize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Versionize)]
 pub struct RtcStateSer {
     /// The load register.
     pub lr: u32,

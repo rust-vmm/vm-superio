@@ -140,7 +140,7 @@ pub struct Rtc<EV: RtcEvents> {
 }
 
 /// The state of the Rtc device.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RtcState {
     /// The load register.
     pub lr: u32,

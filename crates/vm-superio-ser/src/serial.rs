@@ -14,7 +14,7 @@ use versionize_derive::Versionize;
 use vm_superio::SerialState;
 
 /// Wrapper over an `SerialState` that has serialization capabilities.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Versionize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Versionize)]
 pub struct SerialStateSer {
     /// Divisor Latch Low Byte
     pub baud_divisor_low: u8,
