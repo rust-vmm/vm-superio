@@ -4,9 +4,9 @@
 
 ## Changed
 
-- Update vmm-sys-utili dependency to 0.11.0
+- Update vmm-sys-util dependency to 0.11.0.
 - Switched to specifying dependencies using caret requirements
-  instead of comparision requirements
+  instead of comparision requirements.
 
 # v0.6.0
 
