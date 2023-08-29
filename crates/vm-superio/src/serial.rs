@@ -99,6 +99,7 @@ const DEFAULT_LINE_CONTROL: u8 = 0b0000_0011;
 const DEFAULT_MODEM_CONTROL: u8 = MCR_OUT2_BIT;
 const DEFAULT_MODEM_STATUS: u8 = MSR_DSR_BIT | MSR_CTS_BIT | MSR_DCD_BIT;
 const DEFAULT_SCRATCH: u8 = 0x00;
+const DEFAULT_FIFO_CONTROL: u8 = 0x00;
 
 /// Defines a series of callbacks that are invoked in response to the occurrence of specific
 /// events as part of the serial emulation logic (for example, when the driver reads data). The
@@ -174,6 +175,8 @@ pub struct SerialState {
     pub modem_status: u8,
     /// Scratch Register
     pub scratch: u8,
+    /// FIFO control register
+    pub fifo_control: u8,
     /// Transmitter Holding Buffer/Receiver Buffer
     pub in_buffer: Vec<u8>,
 }
@@ -190,6 +193,7 @@ impl Default for SerialState {
             modem_control: DEFAULT_MODEM_CONTROL,
             modem_status: DEFAULT_MODEM_STATUS,
             scratch: DEFAULT_SCRATCH,
+            fifo_control: DEFAULT_FIFO_CONTROL,
             in_buffer: Vec::new(),
         }
     }
@@ -267,6 +271,7 @@ pub struct Serial<T: Trigger, EV: SerialEvents, W: Write> {
     modem_control: u8,
     modem_status: u8,
     scratch: u8,
+    fifo_control: u8,
     // This is the buffer that is used for achieving the Receiver register
     // functionality in FIFO mode. Reading from RBR will return the oldest
     // unread byte from the RX FIFO.
@@ -349,6 +354,7 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
             modem_control: state.modem_control,
             modem_status: state.modem_status,
             scratch: state.scratch,
+            fifo_control: state.fifo_control,
             in_buffer: VecDeque::from(state.in_buffer.clone()),
             interrupt_evt: trigger,
             events: serial_evts,
@@ -397,6 +403,7 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
             modem_control: self.modem_control,
             modem_status: self.modem_status,
             scratch: self.scratch,
+            fifo_control: self.fifo_control,
             in_buffer: Vec::from(self.in_buffer.clone()),
         }
     }

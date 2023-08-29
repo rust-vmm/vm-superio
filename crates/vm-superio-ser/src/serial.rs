@@ -34,6 +34,8 @@ pub struct SerialStateSer {
     pub modem_status: u8,
     /// Scratch Register
     pub scratch: u8,
+    /// FIFO control register
+    pub fifo_control: u8,
     /// Transmitter Holding Buffer/Receiver Buffer
     pub in_buffer: Vec<u8>,
 }
@@ -52,6 +54,7 @@ impl From<&SerialStateSer> for SerialState {
             modem_control: state.modem_control,
             modem_status: state.modem_status,
             scratch: state.scratch,
+            fifo_control: state.fifo_control,
             in_buffer: state.in_buffer.clone(),
         }
     }
@@ -69,6 +72,7 @@ impl From<&SerialState> for SerialStateSer {
             modem_control: state.modem_control,
             modem_status: state.modem_status,
             scratch: state.scratch,
+            fifo_control: state.fifo_control,
             in_buffer: state.in_buffer.clone(),
         }
     }
