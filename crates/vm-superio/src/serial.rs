@@ -23,6 +23,7 @@ use crate::Trigger;
 const DATA_OFFSET: u8 = 0;
 const IER_OFFSET: u8 = 1;
 const IIR_OFFSET: u8 = 2;
+const FCR_OFFSET: u8 = 2;
 const LCR_OFFSET: u8 = 3;
 const MCR_OFFSET: u8 = 4;
 const LSR_OFFSET: u8 = 5;
@@ -81,6 +82,9 @@ const MSR_RI_BIT: u8 = 0b0100_0000;
 // Data Carrier Detect.
 const MSR_DCD_BIT: u8 = 0b1000_0000;
 
+const FCR_FIFO_RESET_RX: u8 = 0b0000_0010;
+const FCR_FIFO_RESET_TX: u8 = 0b0000_0100;
+
 // The following values can be used to set the baud rate to 9600 bps.
 const DEFAULT_BAUD_DIVISOR_HIGH: u8 = 0x00;
 const DEFAULT_BAUD_DIVISOR_LOW: u8 = 0x0C;
@@ -99,6 +103,7 @@ const DEFAULT_LINE_CONTROL: u8 = 0b0000_0011;
 const DEFAULT_MODEM_CONTROL: u8 = MCR_OUT2_BIT;
 const DEFAULT_MODEM_STATUS: u8 = MSR_DSR_BIT | MSR_CTS_BIT | MSR_DCD_BIT;
 const DEFAULT_SCRATCH: u8 = 0x00;
+const DEFAULT_FIFO_CONTROL: u8 = 0x00;
 
 /// Defines a series of callbacks that are invoked in response to the occurrence of specific
 /// events as part of the serial emulation logic (for example, when the driver reads data). The
@@ -174,6 +179,8 @@ pub struct SerialState {
     pub modem_status: u8,
     /// Scratch Register
     pub scratch: u8,
+    /// FIFO control register
+    pub fifo_control: u8,
     /// Transmitter Holding Buffer/Receiver Buffer
     pub in_buffer: Vec<u8>,
 }
@@ -190,6 +197,7 @@ impl Default for SerialState {
             modem_control: DEFAULT_MODEM_CONTROL,
             modem_status: DEFAULT_MODEM_STATUS,
             scratch: DEFAULT_SCRATCH,
+            fifo_control: DEFAULT_FIFO_CONTROL,
             in_buffer: Vec::new(),
         }
     }
@@ -267,6 +275,7 @@ pub struct Serial<T: Trigger, EV: SerialEvents, W: Write> {
     modem_control: u8,
     modem_status: u8,
     scratch: u8,
+    fifo_control: u8,
     // This is the buffer that is used for achieving the Receiver register
     // functionality in FIFO mode. Reading from RBR will return the oldest
     // unread byte from the RX FIFO.
@@ -349,6 +358,7 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
             modem_control: state.modem_control,
             modem_status: state.modem_status,
             scratch: state.scratch,
+            fifo_control: state.fifo_control,
             in_buffer: VecDeque::from(state.in_buffer.clone()),
             interrupt_evt: trigger,
             events: serial_evts,
@@ -397,6 +407,7 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
             modem_control: self.modem_control,
             modem_status: self.modem_status,
             scratch: self.scratch,
+            fifo_control: self.fifo_control,
             in_buffer: Vec::from(self.in_buffer.clone()),
         }
     }
@@ -535,6 +546,13 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
             }
             // We want to enable only the interrupts that are available for 16550A (and below).
             IER_OFFSET => self.interrupt_enable = value & IER_UART_VALID_BITS,
+            FCR_OFFSET => {
+                if value & FCR_FIFO_RESET_RX != 0 || value & FCR_FIFO_RESET_TX != 0 {
+                    self.in_buffer.clear();
+                    self.clear_lsr_rda_bit();
+                    self.events.in_buffer_empty();
+                }
+            }
             LCR_OFFSET => self.line_control = value,
             MCR_OFFSET => self.modem_control = value,
             SCR_OFFSET => self.scratch = value,
@@ -1109,5 +1127,39 @@ mod tests {
 
         // Verify the serial raised an interrupt again.
         assert_eq!(intr_evt.read().unwrap(), 1);
+    }
+
+    fn fifo_rest_rx_tx_from_fifo_control_register(value: u8) {
+        let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
+        let mut serial = Serial::new(intr_evt.try_clone().unwrap(), sink());
+
+        // Enqueue a non-empty slice.
+        serial.enqueue_raw_bytes(&RAW_INPUT_BUF).unwrap();
+
+        // Always verify that data ready bit in LSR is cleared off.
+        let lsr = serial.read(LSR_OFFSET);
+        assert_eq!(lsr & LSR_DATA_READY_BIT, 1);
+
+        // Verify that size of the current buffer is equal to RAW_INPUT_BUF.
+        assert_eq!(serial.in_buffer.len(), RAW_INPUT_BUF.len());
+
+        serial.write(FCR_OFFSET, value).unwrap();
+
+        // Verify that size of the current buffer is equal to 0 after setting 0x2 into FCR.
+        assert_eq!(serial.in_buffer.len(), 0);
+
+        // Always verify that data ready bit in LSR is cleared off.
+        let lsr = serial.read(LSR_OFFSET);
+        assert_eq!(lsr & LSR_DATA_READY_BIT, 0);
+    }
+
+    #[test]
+    fn test_fifo_reset_rx_from_fifo_control_register() {
+        fifo_rest_rx_tx_from_fifo_control_register(FCR_FIFO_RESET_RX);
+    }
+
+    #[test]
+    fn test_fifo_reset_tx_from_fifo_control_register() {
+        fifo_rest_rx_tx_from_fifo_control_register(FCR_FIFO_RESET_TX);
     }
 }
