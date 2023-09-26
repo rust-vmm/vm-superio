@@ -38,7 +38,7 @@ covered in this crate, the VMM needs to do the following operations:
 - event handling (optional)
 
 The following UART registers are emulated via the
-[`Serial` structure](crates/vm-superio/src/serial.rs): DLL, IER, DLH, IIR, LCR,
+[`Serial` structure](./vm-superio/src/serial.rs): DLL, IER, DLH, IIR, LCR,
 LSR, MCR, MSR and SR (a brief, but nice presentation about these,
 [here](https://www.lammertbies.nl/comm/info/serial-uart#regs)).
 The Fifo Control Register (FCR) is not emulated; there is no support yet for
