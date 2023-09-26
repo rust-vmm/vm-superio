@@ -1,5 +1,5 @@
 [workspace]
 members = [
-    "crates/vm-superio",
-    "crates/vm-superio-ser",
+    "vm-superio",
+    "vm-superio-ser",
 ]
