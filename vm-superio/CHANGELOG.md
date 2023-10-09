@@ -1,5 +1,12 @@
 # Changelog
 
+# Upcoming version
+
+## Changed
+
+- Added a `reset_evt` to the `I8042Device` type to retrieve the underlying
+  reset event object.
+
 # v0.7.0
 
 ## Changed
