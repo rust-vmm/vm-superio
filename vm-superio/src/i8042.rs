@@ -86,6 +86,11 @@ impl<T: Trigger> I8042Device<T> {
         I8042Device { reset_evt }
     }
 
+    /// Provides a reference to the reset event object.
+    pub fn reset_evt(&self) -> &T {
+        &self.reset_evt
+    }
+
     /// Handles a read request from the driver at `_offset` offset from the
     /// base I/O address.
     ///
