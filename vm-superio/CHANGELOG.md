@@ -6,6 +6,7 @@
 
 - Added a `reset_evt` to the `I8042Device` type to retrieve the underlying
   reset event object.
+- Added three methods to `Serial` to retrieve the `Write` output object.
 
 # v0.7.0
 
