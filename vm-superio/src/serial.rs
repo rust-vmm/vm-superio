@@ -807,7 +807,7 @@ mod tests {
         RAW_INPUT_BUF
             .iter()
             .for_each(|&c| serial.write(DATA_OFFSET, c).unwrap());
-        assert_eq!(serial.out.as_slice(), &RAW_INPUT_BUF);
+        assert_eq!(serial.writer().as_slice(), &RAW_INPUT_BUF);
     }
 
     #[test]
