@@ -401,6 +401,79 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
         }
     }
 
+    /// Gets a reference to the output Write object
+    ///
+    /// ```rust
+    /// # use vm_superio::Trigger;
+    /// # use vm_superio::serial::Serial;
+    /// # struct DummyTrigger;
+    /// # impl Trigger for DummyTrigger {
+    /// #     type E = ();
+    /// #     fn trigger(&self) -> Result<(), ()> { Ok(()) }
+    /// # }
+    /// const DATA_OFFSET: u8 = 0;
+    ///
+    /// let output = Vec::new();
+    /// let mut serial = Serial::new(DummyTrigger, output);
+    /// serial.write(DATA_OFFSET, 0x66).unwrap();
+    /// assert_eq!(serial.writer().first().copied(), Some(0x66));
+    /// ```
+    pub fn writer(&self) -> &W {
+        &self.out
+    }
+
+    /// Gets a mutable reference to the output Write object
+    ///
+    /// ```rust
+    /// # use vm_superio::Trigger;
+    /// # use vm_superio::serial::Serial;
+    /// # struct DummyTrigger;
+    /// # impl Trigger for DummyTrigger {
+    /// #     type E = ();
+    /// #     fn trigger(&self) -> Result<(), ()> { Ok(()) }
+    /// # }
+    /// const DATA_OFFSET: u8 = 0;
+    ///
+    /// let output = Vec::new();
+    /// let mut serial = Serial::new(DummyTrigger, output);
+    /// serial.write(DATA_OFFSET, 0x66).unwrap();
+    /// serial.writer_mut().clear();
+    /// assert_eq!(serial.writer().first(), None);
+    /// ```
+    pub fn writer_mut(&mut self) -> &mut W {
+        &mut self.out
+    }
+
+    /// Consumes the device and retrieves the inner writer. This
+    /// can be useful when restoring a copy of the device.
+    ///
+    /// ```rust
+    /// # use vm_superio::Trigger;
+    /// # use vm_superio::serial::{NoEvents, Serial};
+    /// # struct DummyTrigger;
+    /// # impl Trigger for DummyTrigger {
+    /// #    type E = ();
+    /// #    fn trigger(&self) -> Result<(), ()> { Ok(()) }
+    /// # }
+    /// const DATA_OFFSET: u8 = 0;
+    ///
+    /// // Create a device with some state
+    /// let output = Vec::new();
+    /// let mut serial = Serial::new(DummyTrigger, output);
+    /// serial.write(DATA_OFFSET, 0x66).unwrap();
+    ///
+    /// // Save the state
+    /// let state = serial.state();
+    /// let output = serial.into_writer();
+    ///
+    /// // Restore the device
+    /// let restored_serial = Serial::from_state(&state, DummyTrigger, NoEvents, output).unwrap();
+    /// assert_eq!(restored_serial.writer().first().copied(), Some(0x66));
+    /// ```
+    pub fn into_writer(self) -> W {
+        self.out
+    }
+
     /// Provides a reference to the interrupt event object.
     pub fn interrupt_evt(&self) -> &T {
         &self.interrupt_evt
@@ -734,7 +807,7 @@ mod tests {
         RAW_INPUT_BUF
             .iter()
             .for_each(|&c| serial.write(DATA_OFFSET, c).unwrap());
-        assert_eq!(serial.out.as_slice(), &RAW_INPUT_BUF);
+        assert_eq!(serial.writer().as_slice(), &RAW_INPUT_BUF);
     }
 
     #[test]
