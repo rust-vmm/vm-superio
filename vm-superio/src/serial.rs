@@ -125,7 +125,7 @@ pub trait SerialEvents {
 /// Provides a no-op implementation of `SerialEvents` which can be used in situations that
 /// do not require logging or otherwise doing anything in response to the events defined
 /// as part of `SerialEvents`.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct NoEvents;
 
 impl SerialEvents for NoEvents {

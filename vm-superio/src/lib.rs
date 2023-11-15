@@ -16,6 +16,7 @@
 //! that can generate an event.
 
 #![deny(missing_docs)]
+#![deny(missing_copy_implementations)]
 
 pub mod i8042;
 pub mod rtc_pl031;
