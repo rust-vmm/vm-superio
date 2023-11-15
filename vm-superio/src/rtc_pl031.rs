@@ -56,7 +56,7 @@ pub trait RtcEvents {
 /// Provides a no-op implementation of `RtcEvents` which can be used in situations that
 /// do not require logging or otherwise doing anything in response to the events defined
 /// as part of `RtcEvents`.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct NoEvents;
 
 impl RtcEvents for NoEvents {
@@ -140,7 +140,7 @@ pub struct Rtc<EV: RtcEvents> {
 }
 
 /// The state of the Rtc device.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RtcState {
     /// The load register.
     pub lr: u32,
