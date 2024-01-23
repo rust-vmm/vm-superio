@@ -8,6 +8,7 @@
   reset event object.
 - Added three methods to `Serial` to retrieve the `Write` output object.
 - Derived the `Copy` trait for `RtcState` and other auxiliary types.
+- Updated vmm-sys-util dependency to 0.12.1
 
 # v0.7.0
 
