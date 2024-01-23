@@ -4,7 +4,8 @@
 
 ## Changed
 
-- Updated vmm-sys-util dependency to 0.11.0
+- Updated vmm-sys-util dependency to 0.12.1
+- Updated versionize dependency to 0.2.0
 - Switched to specifying dependencies using caret requirements
   instead of comparision requirements
 
