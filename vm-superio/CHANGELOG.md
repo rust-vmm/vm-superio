@@ -9,6 +9,8 @@
 - Added three methods to `Serial` to retrieve the `Write` output object.
 - Derived the `Copy` trait for `RtcState` and other auxiliary types.
 - Updated vmm-sys-util dependency to 0.12.1
+- Implemented receive FIFO flushing via the FCR register for the `Serial`
+  device ([#83](https://github.com/rust-vmm/vm-superio/issues/83)).
 
 # v0.7.0
 
