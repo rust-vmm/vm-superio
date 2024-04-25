@@ -1,11 +1,17 @@
 # Changelog
 
-# v0.3.0
+# v0.4.0
 
 ## Changed
 
 - Updated vmm-sys-util dependency to 0.12.1
 - Updated versionize dependency to 0.2.0
+
+# v0.3.0
+
+## Changed
+
+- Updated vmm-sys-util dependency to 0.11.0
 - Switched to specifying dependencies using caret requirements
   instead of comparision requirements
 
