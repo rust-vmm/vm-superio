@@ -11,6 +11,8 @@
 //! This is done by emulating an UART serial port.
 
 use std::collections::VecDeque;
+use std::error::Error as StdError;
+use std::fmt;
 use std::io::{self, Write};
 use std::result::Result;
 use std::sync::Arc;
@@ -288,6 +290,18 @@ pub enum Error<E> {
     /// No space left in FIFO.
     FullFifo,
 }
+
+impl<E: fmt::Display> fmt::Display for Error<E> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::Trigger(e) => write!(f, "Failed to trigger interrupt: {}", e),
+            Error::IOError(e) => write!(f, "Couldn't write/flush to the given destination: {}", e),
+            Error::FullFifo => write!(f, "No space left in FIFO"),
+        }
+    }
+}
+
+impl<E: StdError> StdError for Error<E> {}
 
 impl<T: Trigger, W: Write> Serial<T, NoEvents, W> {
     /// Creates a new `Serial` instance which writes the guest's output to
