@@ -25,6 +25,7 @@ use crate::Trigger;
 const DATA_OFFSET: u8 = 0;
 const IER_OFFSET: u8 = 1;
 const IIR_OFFSET: u8 = 2;
+const FCR_OFFSET: u8 = IIR_OFFSET;
 const LCR_OFFSET: u8 = 3;
 const MCR_OFFSET: u8 = 4;
 const LSR_OFFSET: u8 = 5;
@@ -49,6 +50,8 @@ const IIR_FIFO_BITS: u8 = 0b1100_0000;
 const IIR_NONE_BIT: u8 = 0b0000_0001;
 const IIR_THR_EMPTY_BIT: u8 = 0b0000_0010;
 const IIR_RDA_BIT: u8 = 0b0000_0100;
+
+const FCR_FLUSH_IN_BIT: u8 = 0b0000_0010;
 
 const LCR_DLAB_BIT: u8 = 0b1000_0000;
 
@@ -624,7 +627,14 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
             LCR_OFFSET => self.line_control = value,
             MCR_OFFSET => self.modem_control = value,
             SCR_OFFSET => self.scratch = value,
-            // We are not interested in writing to other offsets (such as FCR offset).
+            FCR_OFFSET => {
+                // Clear the receive FIFO
+                if value & FCR_FLUSH_IN_BIT != 0 {
+                    self.in_buffer.clear();
+                    self.clear_lsr_rda_bit();
+                    self.events.in_buffer_empty();
+                }
+            }
             _ => {}
         }
         Ok(())
