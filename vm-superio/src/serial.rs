@@ -834,6 +834,34 @@ mod tests {
     }
 
     #[test]
+    fn test_serial_rx_flush() {
+        let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
+        let mut serial = Serial::with_events(intr_evt, ExampleSerialEvents::new(), Vec::new());
+
+        // No data yet
+        let mut lsr = serial.read(LSR_OFFSET);
+        assert_eq!(lsr & LSR_DATA_READY_BIT, 0);
+        assert_eq!(serial.fifo_capacity(), FIFO_SIZE);
+
+        // Write some bytes and check data is ready
+        serial.enqueue_raw_bytes(&RAW_INPUT_BUF).unwrap();
+        lsr = serial.read(LSR_OFFSET);
+        assert_eq!(lsr & LSR_DATA_READY_BIT, 1);
+        assert!(serial.fifo_capacity() != FIFO_SIZE);
+
+        // Flush the FIFO
+        serial.write(FCR_OFFSET, FCR_FLUSH_IN_BIT).unwrap();
+
+        // No data again
+        lsr = serial.read(LSR_OFFSET);
+        assert_eq!(lsr & LSR_DATA_READY_BIT, 0);
+        assert_eq!(serial.fifo_capacity(), FIFO_SIZE);
+
+        // An event should have triggered
+        assert_eq!(serial.events.buffer_ready_event.read().unwrap(), 1);
+    }
+
+    #[test]
     fn test_serial_raw_input() {
         let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
         let mut serial = Serial::new(intr_evt.try_clone().unwrap(), sink());
