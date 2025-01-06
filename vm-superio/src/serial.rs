@@ -610,9 +610,8 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
                         .map_err(Error::IOError)
                         .and_then(|_| self.out.flush().map_err(Error::IOError))
                         .map(|_| self.events.out_byte())
-                        .map_err(|err| {
+                        .inspect_err(|_| {
                             self.events.tx_lost_byte();
-                            err
                         });
                     // Because we cannot block the driver, the THRE interrupt is sent
                     // irrespective of whether we are able to write the byte or not
