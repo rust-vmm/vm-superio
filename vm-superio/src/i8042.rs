@@ -76,7 +76,7 @@ impl<T: Trigger> I8042Device<T> {
     ///
     /// # Arguments
     /// * `reset_evt` - A Trigger object that will be used to notify the driver
-    ///                 about the reset event.
+    ///   about the reset event.
     ///
     /// # Example
     ///
@@ -99,7 +99,7 @@ impl<T: Trigger> I8042Device<T> {
     ///
     /// # Arguments
     /// * `_offset` - The offset that will be added to the base address
-    ///              for writing to a specific register.
+    ///   for writing to a specific register.
     ///
     /// # Example
     ///
@@ -114,7 +114,7 @@ impl<T: Trigger> I8042Device<T> {
     ///
     /// # Arguments
     /// * `offset` - The offset that will be added to the base address
-    ///              for writing to a specific register.
+    ///   for writing to a specific register.
     /// * `value` - The byte that should be written.
     ///
     /// # Example

@@ -294,8 +294,8 @@ pub enum Error<E> {
 impl<E: fmt::Display> fmt::Display for Error<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::Trigger(e) => write!(f, "Failed to trigger interrupt: {}", e),
-            Error::IOError(e) => write!(f, "Couldn't write/flush to the given destination: {}", e),
+            Error::Trigger(e) => write!(f, "Failed to trigger interrupt: {e}"),
+            Error::IOError(e) => write!(f, "Couldn't write/flush to the given destination: {e}"),
             Error::FullFifo => write!(f, "No space left in FIFO"),
         }
     }
@@ -310,11 +310,11 @@ impl<T: Trigger, W: Write> Serial<T, NoEvents, W> {
     ///
     /// # Arguments
     /// * `trigger` - The Trigger object that will be used to notify the driver
-    ///               about events.
+    ///   about events.
     /// * `out` - An object for writing guest's output to. In case the output
-    ///           is not of interest,
-    ///           [std::io::Sink](https://doc.rust-lang.org/std/io/struct.Sink.html)
-    ///           can be used here.
+    ///   is not of interest,
+    ///   [std::io::Sink](https://doc.rust-lang.org/std/io/struct.Sink.html)
+    ///   can be used here.
     ///
     /// # Example
     ///
@@ -336,13 +336,13 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
     /// # Arguments
     /// * `state` - A reference to the state from which the `Serial` is constructed.
     /// * `trigger` - The `Trigger` object that will be used to notify the driver
-    ///               about events.
+    ///   about events.
     /// * `serial_evts` - The `SerialEvents` implementation used to track the occurrence
-    ///                   of significant events in the serial operation logic.
+    ///   of significant events in the serial operation logic.
     /// * `out` - An object for writing guest's output to. In case the output
-    ///           is not of interest,
-    ///           [std::io::Sink](https://doc.rust-lang.org/std/io/struct.Sink.html)
-    ///           can be used here.
+    ///   is not of interest,
+    ///   [std::io::Sink](https://doc.rust-lang.org/std/io/struct.Sink.html)
+    ///   can be used here.
     pub fn from_state(
         state: &SerialState,
         trigger: T,
@@ -386,13 +386,13 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
     ///
     /// # Arguments
     /// * `trigger` - The `Trigger` object that will be used to notify the driver
-    ///               about events.
+    ///   about events.
     /// * `serial_evts` - The `SerialEvents` implementation used to track the occurrence
-    ///                   of significant events in the serial operation logic.
+    ///   of significant events in the serial operation logic.
     /// * `out` - An object for writing guest's output to. In case the output
-    ///           is not of interest,
-    ///           [std::io::Sink](https://doc.rust-lang.org/std/io/struct.Sink.html)
-    ///           can be used here.
+    ///   is not of interest,
+    ///   [std::io::Sink](https://doc.rust-lang.org/std/io/struct.Sink.html)
+    ///   can be used here.
     pub fn with_events(trigger: T, serial_evts: EV, out: W) -> Self {
         // Safe because we are using the default state that has an appropriately size input buffer
         // and there are no pending interrupts to be triggered.
@@ -579,7 +579,7 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
     ///
     /// # Arguments
     /// * `offset` - The offset that will be added to the base PIO address
-    ///              for writing to a specific register.
+    ///   for writing to a specific register.
     /// * `value` - The byte that should be written.
     ///
     /// # Example
@@ -637,7 +637,7 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
     ///
     /// # Arguments
     /// * `offset` - The offset that will be added to the base PIO address
-    ///              for reading from a specific register.
+    ///   for reading from a specific register.
     ///
     /// # Example
     ///
