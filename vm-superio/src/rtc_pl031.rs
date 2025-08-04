@@ -209,7 +209,7 @@ impl<EV: RtcEvents> Rtc<EV> {
     /// # Arguments
     /// * `state` - A reference to the state from which the `Rtc` is constructed.
     /// * `rtc_events` - The `RtcEvents` implementation used to track the occurrence
-    ///                  of failure or missed events in the RTC operation.
+    ///   of failure or missed events in the RTC operation.
     pub fn from_state(state: &RtcState, rtc_events: EV) -> Self {
         Rtc {
             lr: state.lr,
@@ -228,7 +228,7 @@ impl<EV: RtcEvents> Rtc<EV> {
     ///
     /// # Arguments
     /// * `rtc_events` - The `RtcEvents` implementation used to track the occurrence
-    ///                  of failure or missed events in the RTC operation.
+    ///   of failure or missed events in the RTC operation.
     pub fn with_events(rtc_events: EV) -> Self {
         Self::from_state(&RtcState::default(), rtc_events)
     }
@@ -269,7 +269,7 @@ impl<EV: RtcEvents> Rtc<EV> {
     ///
     /// # Arguments
     /// * `offset` - The offset from the base register specifying
-    ///              the register to be written.
+    ///   the register to be written.
     /// * `data` - The little endian, 4 byte array to write to the register
     ///
     /// # Example
@@ -327,7 +327,7 @@ impl<EV: RtcEvents> Rtc<EV> {
     ///
     /// # Arguments
     /// * `offset` - The offset from the base register specifying
-    ///              the register to be read.
+    ///   the register to be read.
     /// * `data` - The little-endian, 4 byte array storing the read value.
     ///
     /// # Example
