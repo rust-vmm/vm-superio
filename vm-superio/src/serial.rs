@@ -25,6 +25,7 @@ use crate::Trigger;
 const DATA_OFFSET: u8 = 0;
 const IER_OFFSET: u8 = 1;
 const IIR_OFFSET: u8 = 2;
+const FCR_OFFSET: u8 = IIR_OFFSET;
 const LCR_OFFSET: u8 = 3;
 const MCR_OFFSET: u8 = 4;
 const LSR_OFFSET: u8 = 5;
@@ -49,6 +50,8 @@ const IIR_FIFO_BITS: u8 = 0b1100_0000;
 const IIR_NONE_BIT: u8 = 0b0000_0001;
 const IIR_THR_EMPTY_BIT: u8 = 0b0000_0010;
 const IIR_RDA_BIT: u8 = 0b0000_0100;
+
+const FCR_FLUSH_IN_BIT: u8 = 0b0000_0010;
 
 const LCR_DLAB_BIT: u8 = 0b1000_0000;
 
@@ -624,7 +627,14 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
             LCR_OFFSET => self.line_control = value,
             MCR_OFFSET => self.modem_control = value,
             SCR_OFFSET => self.scratch = value,
-            // We are not interested in writing to other offsets (such as FCR offset).
+            FCR_OFFSET => {
+                // Clear the receive FIFO
+                if value & FCR_FLUSH_IN_BIT != 0 {
+                    self.in_buffer.clear();
+                    self.clear_lsr_rda_bit();
+                    self.events.in_buffer_empty();
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -821,6 +831,34 @@ mod tests {
             .iter()
             .for_each(|&c| serial.write(DATA_OFFSET, c).unwrap());
         assert_eq!(serial.writer().as_slice(), &RAW_INPUT_BUF);
+    }
+
+    #[test]
+    fn test_serial_rx_flush() {
+        let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
+        let mut serial = Serial::with_events(intr_evt, ExampleSerialEvents::new(), Vec::new());
+
+        // No data yet
+        let mut lsr = serial.read(LSR_OFFSET);
+        assert_eq!(lsr & LSR_DATA_READY_BIT, 0);
+        assert_eq!(serial.fifo_capacity(), FIFO_SIZE);
+
+        // Write some bytes and check data is ready
+        serial.enqueue_raw_bytes(&RAW_INPUT_BUF).unwrap();
+        lsr = serial.read(LSR_OFFSET);
+        assert_eq!(lsr & LSR_DATA_READY_BIT, 1);
+        assert!(serial.fifo_capacity() != FIFO_SIZE);
+
+        // Flush the FIFO
+        serial.write(FCR_OFFSET, FCR_FLUSH_IN_BIT).unwrap();
+
+        // No data again
+        lsr = serial.read(LSR_OFFSET);
+        assert_eq!(lsr & LSR_DATA_READY_BIT, 0);
+        assert_eq!(serial.fifo_capacity(), FIFO_SIZE);
+
+        // An event should have triggered
+        assert_eq!(serial.events.buffer_ready_event.read().unwrap(), 1);
     }
 
     #[test]
