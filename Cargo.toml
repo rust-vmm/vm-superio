@@ -6,4 +6,4 @@ members = [
 
 [workspace.dependencies]
 # rust-vmm crates
-vmm-sys-util = "0.12.0"
+vmm-sys-util = ">=0.12.1,<=0.14.0"
