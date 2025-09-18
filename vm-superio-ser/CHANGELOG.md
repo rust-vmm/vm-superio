@@ -2,6 +2,8 @@
 
 ## Upcoming Release
 
+## v0.4.1
+
 ### Changed
 
 - Widen vmm-sys-util dependency to 0.12.0-0.14.0
