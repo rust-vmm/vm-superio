@@ -1,6 +1,6 @@
 [package]
 name = "vm-superio"
-version = "0.8.0"
+version = "0.8.1"
 description = "Emulation for legacy devices"
 keywords = ["superio", "emulation"]
 repository = "https://github.com/rust-vmm/vm-superio"
