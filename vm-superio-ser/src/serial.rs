@@ -6,15 +6,13 @@
 //!
 //! This module defines the `SerialStateSer` abstraction which mirrors the
 //! `SerialState` from the base crate, and adds on top of it derives for
-//! the `Serialize`, `Deserialize` and `Versionize` traits.
+//! the `serde::Serialize/Deserialize` traits.
 
 use serde::{Deserialize, Serialize};
-use versionize::{VersionMap, Versionize, VersionizeResult};
-use versionize_derive::Versionize;
 use vm_superio::SerialState;
 
 /// Wrapper over an `SerialState` that has serialization capabilities.
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Versionize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct SerialStateSer {
     /// Divisor Latch Low Byte
     pub baud_divisor_low: u8,
@@ -164,19 +162,5 @@ mod tests {
         let state_der = bincode::deserialize(&state_ser).unwrap();
 
         assert_eq!(state, state_der);
-    }
-
-    #[test]
-    fn test_versionize() {
-        let map = VersionMap::new();
-        let state = SerialStateSer::default();
-        let mut v1_state = Vec::new();
-
-        Versionize::serialize(&state, &mut v1_state, &map, 1).unwrap();
-
-        let from_v1: SerialStateSer =
-            Versionize::deserialize(&mut v1_state.as_slice(), &map, 1).unwrap();
-
-        assert_eq!(from_v1, state);
     }
 }
