@@ -6,15 +6,13 @@
 //!
 //! This module defines the `RtcStateSer` abstraction which mirrors the
 //! `RtcState` from the base crate, and adds on top of it derives for
-//! the `Serialize`, `Deserialize` and `Versionize` traits.
+//! the `serde::Serialize/Deserialize` traits.
 
 use serde::{Deserialize, Serialize};
-use versionize::{VersionMap, Versionize, VersionizeResult};
-use versionize_derive::Versionize;
 use vm_superio::RtcState;
 
 /// Wrapper over an `RtcState` that has serialization capabilities.
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Versionize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct RtcStateSer {
     /// The load register.
     pub lr: u32,

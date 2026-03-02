@@ -2,6 +2,10 @@
 
 ## Upcoming Release
 
+### Removed
+
+- Remove versionize support
+
 ## v0.4.1
 
 ### Changed

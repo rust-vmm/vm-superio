@@ -5,7 +5,7 @@
 //! Adds to the state objects from `vm-superio` serialization capabilities.
 //!
 //! Provides wrappers over the state objects from `vm-superio` crate which
-//! implement the `Serialize`, `Deserialize` and `Versionize` traits as well.
+//! implement the `serde::Serialize/Deserialize` traits as well.
 
 #![deny(missing_docs)]
 

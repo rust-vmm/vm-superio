@@ -17,7 +17,7 @@ containing the following crates:
 - `vm-superio-ser` - which mirrors the state structure from `vm-superio` and
    adds the required version constraints on it, and derives/implements the
   required (de)serialization traits (i.e. `serde`'s `Serialize` and
-  `Deserialize`; `Versionize`).
+  `Deserialize`).
 
 ## Serial Console
 
@@ -125,7 +125,7 @@ This support is offered for the `Rtc` and the `Serial` devices by the following
 abstractions:
 - `<Device>State` -> which keeps the hardware state of the `<Device>`;
 - `<Device>StateSer` -> which can be used by customers who need a
-  `<Device>State` that is also `(De)Serialize` and/or `Versionize`. If the
+  `<Device>State` that is also `(De)Serialize`. If the
   customers want a different state than the upstream one, then they can
   implement `From` (or similar mechanisms) in their products to convert the
   upstream state to the desired product state.
