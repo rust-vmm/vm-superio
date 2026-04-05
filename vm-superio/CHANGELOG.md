@@ -2,6 +2,11 @@
 
 ## Upcoming Release
 
+### Changed
+
+- Implemented receive FIFO flushing via the FCR register for the `Serial`
+  device ([#83](https://github.com/rust-vmm/vm-superio/issues/83)).
+
 ## v0.8.1
 
 ### Changed
