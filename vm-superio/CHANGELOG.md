@@ -2,6 +2,14 @@
 
 ## Upcoming Release
 
+### Fixed
+
+- Writing IER now re-evaluates pending interrupt conditions: enabling the RDA
+  interrupt with data in the RX FIFO, or the THRE interrupt, asserts the
+  interrupt immediately as on real hardware. Previously, input received while
+  a driver had temporarily masked IER (e.g. the Linux 8250 console during a
+  `printk`) was never signalled to the guest and stayed in the FIFO.
+
 ## v0.8.1
 
 ### Changed

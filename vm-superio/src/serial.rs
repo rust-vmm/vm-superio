@@ -620,7 +620,21 @@ impl<T: Trigger, EV: SerialEvents, W: Write> Serial<T, EV, W> {
                 }
             }
             // We want to enable only the interrupts that are available for 16550A (and below).
-            IER_OFFSET => self.interrupt_enable = value & IER_UART_VALID_BITS,
+            IER_OFFSET => {
+                self.interrupt_enable = value & IER_UART_VALID_BITS;
+                // On a real UART the interrupt output is a level signal derived from
+                // the interrupt conditions that are both pending and enabled, so
+                // (re-)enabling an interrupt whose condition is already pending
+                // asserts it immediately. Drivers rely on this: for instance the
+                // Linux 8250 console masks IER while it writes a message and, once
+                // it restores IER, expects the RX interrupt to fire again if data
+                // was received in the meantime (otherwise that input is never read).
+                if !self.in_buffer.is_empty() {
+                    self.received_data_interrupt().map_err(Error::Trigger)?;
+                }
+                // The transmitter holding register is always empty in this model.
+                self.thr_empty_interrupt().map_err(Error::Trigger)?;
+            }
             LCR_OFFSET => self.line_control = value,
             MCR_OFFSET => self.modem_control = value,
             SCR_OFFSET => self.scratch = value,
@@ -867,6 +881,83 @@ mod tests {
 
         lsr = serial.read(LSR_OFFSET);
         assert_eq!(lsr & LSR_DATA_READY_BIT, 0);
+    }
+
+    #[test]
+    fn test_rda_interrupt_reasserted_on_ier_write() {
+        let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
+        let mut serial = Serial::new(intr_evt.try_clone().unwrap(), sink());
+
+        serial.write(IER_OFFSET, IER_RDA_BIT).unwrap();
+
+        // This is what the Linux 8250 console does around each message it
+        // prints: save IER, mask all interrupts, write, restore IER.
+        let saved_ier = serial.read(IER_OFFSET);
+        serial.write(IER_OFFSET, 0).unwrap();
+
+        // Data arrives while interrupts are masked: the FIFO and LSR reflect
+        // it, but no interrupt must be raised.
+        serial.enqueue_raw_bytes(&RAW_INPUT_BUF).unwrap();
+        assert_ne!(serial.read(LSR_OFFSET) & LSR_DATA_READY_BIT, 0);
+        assert_eq!(
+            intr_evt.read().unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        assert_eq!(
+            serial.interrupt_identification,
+            DEFAULT_INTERRUPT_IDENTIFICATION
+        );
+
+        // Restoring IER with data pending in the FIFO must assert the RDA
+        // interrupt, like the level-triggered output of a real UART would.
+        serial.write(IER_OFFSET, saved_ier).unwrap();
+        assert_eq!(intr_evt.read().unwrap(), 1);
+        let iir = serial.read(IIR_OFFSET);
+        assert_eq!(iir & IIR_NONE_BIT, 0);
+        assert_ne!(iir & IIR_RDA_BIT, 0);
+
+        // Once the interrupt has been identified, writing IER again with the
+        // FIFO still non-empty must not raise a second one (the RDA bit is
+        // only cleared by reading the data register).
+        serial.write(IER_OFFSET, saved_ier).unwrap();
+        assert_eq!(intr_evt.read().unwrap(), 1);
+        serial.read(IIR_OFFSET);
+        RAW_INPUT_BUF.iter().for_each(|&c| {
+            assert_eq!(serial.read(DATA_OFFSET), c);
+        });
+        serial.write(IER_OFFSET, saved_ier).unwrap();
+        assert_eq!(
+            intr_evt.read().unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        assert_eq!(
+            serial.interrupt_identification,
+            DEFAULT_INTERRUPT_IDENTIFICATION
+        );
+    }
+
+    #[test]
+    fn test_thr_interrupt_asserted_on_ier_write() {
+        let intr_evt = EventFd::new(libc::EFD_NONBLOCK).unwrap();
+        let mut serial = Serial::new(intr_evt.try_clone().unwrap(), sink());
+
+        // Enabling the THR empty interrupt while the THR is empty (always, in
+        // this model) asserts it right away, as on a 16550.
+        serial.write(IER_OFFSET, IER_THR_EMPTY_BIT).unwrap();
+        assert_eq!(intr_evt.read().unwrap(), 1);
+        let iir = serial.read(IIR_OFFSET);
+        assert_ne!(iir & IIR_THR_EMPTY_BIT, 0);
+
+        // Writing an IER value that does not enable THRE does not.
+        serial.write(IER_OFFSET, IER_RDA_BIT).unwrap();
+        assert_eq!(
+            intr_evt.read().unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        assert_eq!(
+            serial.interrupt_identification,
+            DEFAULT_INTERRUPT_IDENTIFICATION
+        );
     }
 
     #[test]
