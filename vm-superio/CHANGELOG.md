@@ -2,6 +2,8 @@
 
 ## Upcoming Release
 
+## v0.8.2
+
 ### Fixed
 
 - Writing IER now re-evaluates pending interrupt conditions: enabling the RDA

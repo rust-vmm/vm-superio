@@ -17,7 +17,7 @@ serde = { version = "1.0.27", features = ["derive"] }
 # We are using a fixed version of `vm-superio` so that the current version
 # of `vm-superio-ser` won't take a newer version of vm-superio, with which
 # it may not be compatible.
-vm-superio = { version = "=0.8.1", path = "../vm-superio" }
+vm-superio = { version = "=0.8.2", path = "../vm-superio" }
 
 [dev-dependencies]
 libc = "0.2.39"
